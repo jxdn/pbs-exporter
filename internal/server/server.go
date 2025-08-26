@@ -26,6 +26,9 @@ func (s *Server) UpdateMetrics() {
 	
 	// Update node metrics
 	s.updateNodeMetrics()
+
+	// Update qstat -q summary metrics
+	s.updateQueueSummaryMetrics()
 }
 
 // updateJobMetrics updates job-related metrics
@@ -62,6 +65,17 @@ func (s *Server) updateNodeMetrics() {
 
 	// Update metrics with parsed data
 	s.updateNodeMetricsFromData(nodeData)
+}
+
+// updateQueueSummaryMetrics updates totals from `qstat -q`
+func (s *Server) updateQueueSummaryMetrics() {
+	output, err := s.pbsClient.GetQstatQOutput()
+	if err != nil {
+		return
+	}
+	running, queued := s.pbsClient.ParseQstatQSummary(output)
+	s.registry.QueueSummaryRunning.Set(float64(running))
+	s.registry.QueueSummaryQueued.Set(float64(queued))
 }
 
 // updateJobMetricsFromData updates job metrics from parsed data

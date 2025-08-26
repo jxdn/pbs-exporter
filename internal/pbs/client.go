@@ -38,6 +38,17 @@ func (c *Client) GetPbsnodesOutput() (string, error) {
 	return string(output), nil
 }
 
+// GetQstatQOutput executes qstat -q and returns the output
+func (c *Client) GetQstatQOutput() (string, error) {
+	cmd := exec.Command("qstat", "-q")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("Error running qstat -q: %v", err)
+		return "", err
+	}
+	return string(output), nil
+}
+
 // JobData represents parsed job information
 type JobData struct {
 	UserJobCount   map[string]int
@@ -151,6 +162,55 @@ func (c *Client) ParseQstatOutput(output string) *JobData {
 	}
 
 	return data
+}
+
+// ParseQstatQSummary parses `qstat -q` output and returns totals for running and queued jobs
+func (c *Client) ParseQstatQSummary(output string) (totalRunning int, totalQueued int) {
+	scanner := bufio.NewScanner(strings.NewReader(output))
+	seenSeparator := false
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		// Detect separator
+		if strings.HasPrefix(line, "---") {
+			seenSeparator = true
+			continue
+		}
+		if seenSeparator {
+			// Totals line typically: "55     2"
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				if v, err := strconv.Atoi(fields[0]); err == nil {
+					totalRunning = v
+				}
+				if v, err := strconv.Atoi(fields[1]); err == nil {
+					totalQueued = v
+				}
+				return
+			}
+		}
+
+		// Fallback: sum per-queue lines by extracting numeric fields before state
+		fields := strings.Fields(line)
+		if len(fields) < 3 || strings.EqualFold(fields[0], "Queue") || strings.EqualFold(fields[0], "server:") {
+			continue
+		}
+		// Collect ints in this line
+		var nums []int
+		for _, f := range fields {
+			if n, err := strconv.Atoi(f); err == nil {
+				nums = append(nums, n)
+			}
+		}
+		if len(nums) >= 2 {
+			// Heuristic: last two numbers are Run and Que
+			totalRunning += nums[len(nums)-2]
+			totalQueued += nums[len(nums)-1]
+		}
+	}
+	return
 }
 
 // ParsePbsnodesOutput parses pbsnodes output and returns structured node data
