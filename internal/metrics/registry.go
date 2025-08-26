@@ -42,9 +42,7 @@ type Registry struct {
 	// qstat -q summary totals
 	QueueSummaryRunning prometheus.Gauge
 	QueueSummaryQueued  prometheus.Gauge
-	QueueSummaryRunningByQueue *prometheus.GaugeVec
-	QueueSummaryQueuedByQueue  *prometheus.GaugeVec
-	QueueQueuedByQueue         *prometheus.GaugeVec
+	QueueQueuedByQueue  *prometheus.GaugeVec
 
 	// Prometheus registry
 	registry *prometheus.Registry
@@ -274,22 +272,6 @@ func NewRegistry() *Registry {
 			},
 		),
 
-		QueueSummaryRunningByQueue: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "qstatq_running_by_queue",
-				Help: "qstat -q running jobs by queue",
-			},
-			[]string{"queue"},
-		),
-
-		QueueSummaryQueuedByQueue: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "qstatq_queued_by_queue",
-				Help: "qstat -q queued jobs by queue",
-			},
-			[]string{"queue"},
-		),
-
 		QueueQueuedByQueue: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "qstat_que_by_queue",
@@ -339,8 +321,6 @@ func (r *Registry) registerMetrics() {
 		r.NodeCountDown,
 		r.QueueSummaryRunning,
 		r.QueueSummaryQueued,
-		r.QueueSummaryRunningByQueue,
-		r.QueueSummaryQueuedByQueue,
 		r.QueueQueuedByQueue,
 	)
 }
@@ -352,8 +332,6 @@ func (r *Registry) GetRegistry() *prometheus.Registry {
 
 // ResetJobMetrics resets all job-related metrics
 func (r *Registry) ResetJobMetrics() {
-	running := r.RunningJobsByUser // keep to avoid linter complaining about unused receiver in edits
-	_ = running
 	r.RunningJobsByUser.Reset()
 	r.RunningJobsByQueue.Reset()
 	r.JobsInQueue.Reset()

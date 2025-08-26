@@ -77,13 +77,9 @@ func (s *Server) updateQueueSummaryMetrics() {
 	s.registry.QueueSummaryRunning.Set(float64(running))
 	s.registry.QueueSummaryQueued.Set(float64(queued))
 
-	// Per-queue values
-	runByQ, queByQ := s.pbsClient.ParseQstatQPerQueue(output)
-	for q, v := range runByQ {
-		s.registry.QueueSummaryRunningByQueue.WithLabelValues(q).Set(float64(v))
-	}
+	// Per-queue values (only queued)
+	_, queByQ := s.pbsClient.ParseQstatQPerQueue(output)
 	for q, v := range queByQ {
-		s.registry.QueueSummaryQueuedByQueue.WithLabelValues(q).Set(float64(v))
 		s.registry.QueueQueuedByQueue.WithLabelValues(q).Set(float64(v))
 	}
 }
