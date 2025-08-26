@@ -76,6 +76,16 @@ func (s *Server) updateQueueSummaryMetrics() {
 	running, queued := s.pbsClient.ParseQstatQSummary(output)
 	s.registry.QueueSummaryRunning.Set(float64(running))
 	s.registry.QueueSummaryQueued.Set(float64(queued))
+
+	// Per-queue values
+	runByQ, queByQ := s.pbsClient.ParseQstatQPerQueue(output)
+	for q, v := range runByQ {
+		s.registry.QueueSummaryRunningByQueue.WithLabelValues(q).Set(float64(v))
+	}
+	for q, v := range queByQ {
+		s.registry.QueueSummaryQueuedByQueue.WithLabelValues(q).Set(float64(v))
+		s.registry.QueueQueuedByQueue.WithLabelValues(q).Set(float64(v))
+	}
 }
 
 // updateJobMetricsFromData updates job metrics from parsed data

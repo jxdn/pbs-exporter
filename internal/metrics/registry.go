@@ -44,6 +44,7 @@ type Registry struct {
 	QueueSummaryQueued  prometheus.Gauge
 	QueueSummaryRunningByQueue *prometheus.GaugeVec
 	QueueSummaryQueuedByQueue  *prometheus.GaugeVec
+	QueueQueuedByQueue         *prometheus.GaugeVec
 
 	// Prometheus registry
 	registry *prometheus.Registry
@@ -289,6 +290,14 @@ func NewRegistry() *Registry {
 			[]string{"queue"},
 		),
 
+		QueueQueuedByQueue: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "qstat_que_by_queue",
+				Help: "Queued jobs per queue from qstat -q",
+			},
+			[]string{"queue"},
+		),
+
 		registry: prometheus.NewRegistry(),
 	}
 
@@ -332,6 +341,7 @@ func (r *Registry) registerMetrics() {
 		r.QueueSummaryQueued,
 		r.QueueSummaryRunningByQueue,
 		r.QueueSummaryQueuedByQueue,
+		r.QueueQueuedByQueue,
 	)
 }
 

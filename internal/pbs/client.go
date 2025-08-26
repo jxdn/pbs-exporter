@@ -213,6 +213,38 @@ func (c *Client) ParseQstatQSummary(output string) (totalRunning int, totalQueue
 	return
 }
 
+// ParseQstatQPerQueue parses `qstat -q` output and returns per-queue running and queued counts
+func (c *Client) ParseQstatQPerQueue(output string) (runningByQueue map[string]int, queuedByQueue map[string]int) {
+	runningByQueue = make(map[string]int)
+	queuedByQueue = make(map[string]int)
+
+	scanner := bufio.NewScanner(strings.NewReader(output))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "server:") || strings.HasPrefix(strings.ToLower(line), "queue ") || strings.HasPrefix(line, "---") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		queueName := fields[0]
+		// Extract integers in line
+		var nums []int
+		for _, f := range fields {
+			if n, err := strconv.Atoi(f); err == nil {
+				nums = append(nums, n)
+			}
+		}
+		if len(nums) >= 2 {
+			// Heuristic: last two numbers are Run and Que
+			runningByQueue[queueName] = nums[len(nums)-2]
+			queuedByQueue[queueName] = nums[len(nums)-1]
+		}
+	}
+	return
+}
+
 // ParsePbsnodesOutput parses pbsnodes output and returns structured node data
 func (c *Client) ParsePbsnodesOutput(output string) *NodeData {
 	data := &NodeData{
