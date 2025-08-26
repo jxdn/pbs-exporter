@@ -2,12 +2,17 @@
 
 A Prometheus exporter for PBS (Portable Batch System) cluster monitoring.
 
+![PBS Cluster Dashboard](docs/pbs-dashboard.png)
+
+*Real-time PBS cluster monitoring dashboard showing job status, node availability, and resource utilization*
+
 ## Features
 
 - **Job Metrics**: Track running jobs by user, queue, and status
 - **Node Metrics**: Monitor node states, CPU/GPU usage, and memory utilization
 - **Queue Metrics**: Track job distribution across different queues
 - **Real-time Updates**: Metrics are updated every 60 seconds
+- **Dashboard Integration**: Compatible with Grafana and other monitoring dashboards
 
 ## Architecture
 
