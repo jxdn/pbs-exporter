@@ -2,7 +2,7 @@
 
 A Prometheus exporter for PBS (Portable Batch System) cluster monitoring.
 
-![PBS Cluster Dashboard](docs/pbs-dashboard.png)
+![PBS Cluster Dashboard](docs/pbs_dashboard.png)
 
 *Real-time PBS cluster monitoring dashboard showing job status, node availability, and resource utilization*
 
