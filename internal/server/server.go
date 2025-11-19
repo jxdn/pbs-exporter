@@ -1,6 +1,7 @@
 package server
 
 import (
+	"sort"
 	"pbs-exporter/internal/metrics"
 	"pbs-exporter/internal/pbs"
 )
@@ -84,6 +85,35 @@ func (s *Server) updateQueueSummaryMetrics() {
 	}
 }
 
+// updateTopQueuedUsers updates metrics for the top 5 users with queued jobs
+func (s *Server) updateTopQueuedUsers(queuedJobsByUser map[string]int) {
+	// Create a slice of user-count pairs for sorting
+	type userCount struct {
+		user  string
+		count int
+	}
+	users := make([]userCount, 0, len(queuedJobsByUser))
+	for user, count := range queuedJobsByUser {
+		if count > 0 { // Only include users with queued jobs
+			users = append(users, userCount{user: user, count: count})
+		}
+	}
+
+	// Sort by count (descending)
+	sort.Slice(users, func(i, j int) bool {
+		return users[i].count > users[j].count
+	})
+
+	// Set metrics for top 5 users
+	topCount := 5
+	if len(users) < topCount {
+		topCount = len(users)
+	}
+	for i := 0; i < topCount; i++ {
+		s.registry.QueuedJobsByUser.WithLabelValues(users[i].user).Set(float64(users[i].count))
+	}
+}
+
 // updateJobMetricsFromData updates job metrics from parsed data
 func (s *Server) updateJobMetricsFromData(data *pbs.JobData) {
 	// Update user job counts
@@ -91,12 +121,8 @@ func (s *Server) updateJobMetricsFromData(data *pbs.JobData) {
 		s.registry.RunningJobsByUser.WithLabelValues(user).Set(float64(count))
 	}
 
-	// Update queued jobs by user (all users with queued jobs)
-	for user, count := range data.QueuedJobsByUser {
-		if count > 0 {
-			s.registry.QueuedJobsByUser.WithLabelValues(user).Set(float64(count))
-		}
-	}
+	// Update queued jobs by user (top 5 only)
+	s.updateTopQueuedUsers(data.QueuedJobsByUser)
 
 	// Update queue metrics
 	queues := []string{"interactive", "medium", "long", "large", "small", "special", "AISG_debug", "AISG_large", "AISG_guest"}
