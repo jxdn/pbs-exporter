@@ -51,18 +51,19 @@ func (c *Client) GetQstatQOutput() (string, error) {
 
 // JobData represents parsed job information
 type JobData struct {
-	UserJobCount   map[string]int
-	QueueJobCount  map[string]int
-	QueueTotalCount map[string]int
-	StatusCount    map[string]int
-	TotalR         int
-	TotalH         int
-	TotalF         int
-	TotalQ         int
-	TotalE         int
-	TotalB         int
-	TotalAll       int
-	TotalRunning   int
+	UserJobCount      map[string]int
+	QueuedJobsByUser  map[string]int
+	QueueJobCount     map[string]int
+	QueueTotalCount   map[string]int
+	StatusCount       map[string]int
+	TotalR            int
+	TotalH            int
+	TotalF            int
+	TotalQ            int
+	TotalE            int
+	TotalB            int
+	TotalAll          int
+	TotalRunning      int
 }
 
 // NodeData represents parsed node information
@@ -89,10 +90,11 @@ type NodeInfo struct {
 // ParseQstatOutput parses qstat output and returns structured job data
 func (c *Client) ParseQstatOutput(output string) *JobData {
 	data := &JobData{
-		UserJobCount:   make(map[string]int),
-		QueueJobCount:  make(map[string]int),
-		QueueTotalCount: make(map[string]int),
-		StatusCount:    make(map[string]int),
+		UserJobCount:     make(map[string]int),
+		QueuedJobsByUser: make(map[string]int),
+		QueueJobCount:    make(map[string]int),
+		QueueTotalCount:  make(map[string]int),
+		StatusCount:      make(map[string]int),
 	}
 
 	// Initialize all queues with 0
@@ -157,6 +159,11 @@ func (c *Client) ParseQstatOutput(output string) *JobData {
 				data.UserJobCount[user]++
 				data.QueueJobCount[queue]++
 				data.TotalRunning++
+			}
+
+			// Count queued jobs by user (check for original "Q" status)
+			if status == "Q" {
+				data.QueuedJobsByUser[user]++
 			}
 		}
 	}

@@ -8,6 +8,7 @@ import (
 type Registry struct {
 	// Job metrics
 	RunningJobsByUser  *prometheus.GaugeVec
+	QueuedJobsByUser   *prometheus.GaugeVec
 	RunningJobsByQueue *prometheus.GaugeVec
 	JobsInQueue        *prometheus.GaugeVec
 	TotalRunningJobs   prometheus.Gauge
@@ -56,6 +57,14 @@ func NewRegistry() *Registry {
 			prometheus.GaugeOpts{
 				Name: "qstat_running_jobs_by_user",
 				Help: "Number of running jobs per user",
+			},
+			[]string{"user"},
+		),
+
+		QueuedJobsByUser: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "qstat_queued_jobs_by_user",
+				Help: "Number of queued jobs per user",
 			},
 			[]string{"user"},
 		),
@@ -293,6 +302,7 @@ func NewRegistry() *Registry {
 func (r *Registry) registerMetrics() {
 	r.registry.MustRegister(
 		r.RunningJobsByUser,
+		r.QueuedJobsByUser,
 		r.RunningJobsByQueue,
 		r.JobsInQueue,
 		r.TotalRunningJobs,
@@ -333,6 +343,7 @@ func (r *Registry) GetRegistry() *prometheus.Registry {
 // ResetJobMetrics resets all job-related metrics
 func (r *Registry) ResetJobMetrics() {
 	r.RunningJobsByUser.Reset()
+	r.QueuedJobsByUser.Reset()
 	r.RunningJobsByQueue.Reset()
 	r.JobsInQueue.Reset()
 	r.JobsByStatus.Reset()
