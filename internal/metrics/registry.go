@@ -11,28 +11,28 @@ type Registry struct {
 	QueuedJobsByUser   *prometheus.GaugeVec
 	RunningJobsByQueue *prometheus.GaugeVec
 	JobsInQueue        *prometheus.GaugeVec
-	TotalRunningJobs   prometheus.Gauge
-	TotalRJobs         prometheus.Gauge
-	TotalHJobs         prometheus.Gauge
-	TotalFJobs         prometheus.Gauge
-	TotalQJobs         prometheus.Gauge
-	TotalEJobs         prometheus.Gauge
-	TotalBJobs         prometheus.Gauge
-	TotalAllJobs       prometheus.Gauge
+	TotalRunningJobs   *prometheus.GaugeVec
+	TotalRJobs         *prometheus.GaugeVec
+	TotalHJobs         *prometheus.GaugeVec
+	TotalFJobs         *prometheus.GaugeVec
+	TotalQJobs         *prometheus.GaugeVec
+	TotalEJobs         *prometheus.GaugeVec
+	TotalBJobs         *prometheus.GaugeVec
+	TotalAllJobs       *prometheus.GaugeVec
 	JobsByStatus       *prometheus.GaugeVec
 
 	// Node metrics
-	NodeState            *prometheus.GaugeVec
-	NodeJobs             *prometheus.GaugeVec
-	NodeCpusAvailable    *prometheus.GaugeVec
-	NodeCpusUsed         *prometheus.GaugeVec
-	NodeCpusTotal        *prometheus.GaugeVec
-	NodeGpusAvailable    *prometheus.GaugeVec
-	NodeGpusUsed         *prometheus.GaugeVec
-	NodeGpusTotal        *prometheus.GaugeVec
-	NodeMemoryAvailable  *prometheus.GaugeVec
-	NodeMemoryUsed       *prometheus.GaugeVec
-	NodeMemoryTotal      *prometheus.GaugeVec
+	NodeState           *prometheus.GaugeVec
+	NodeJobs            *prometheus.GaugeVec
+	NodeCpusAvailable   *prometheus.GaugeVec
+	NodeCpusUsed        *prometheus.GaugeVec
+	NodeCpusTotal       *prometheus.GaugeVec
+	NodeGpusAvailable   *prometheus.GaugeVec
+	NodeGpusUsed        *prometheus.GaugeVec
+	NodeGpusTotal       *prometheus.GaugeVec
+	NodeMemoryAvailable *prometheus.GaugeVec
+	NodeMemoryUsed      *prometheus.GaugeVec
+	NodeMemoryTotal     *prometheus.GaugeVec
 
 	// Node count metrics
 	NodeCountFree    prometheus.Gauge
@@ -41,8 +41,8 @@ type Registry struct {
 	NodeCountDown    prometheus.Gauge
 
 	// qstat -q summary totals
-	QueueSummaryRunning prometheus.Gauge
-	QueueSummaryQueued  prometheus.Gauge
+	QueueSummaryRunning *prometheus.GaugeVec
+	QueueSummaryQueued  *prometheus.GaugeVec
 	QueueQueuedByQueue  *prometheus.GaugeVec
 
 	// Cluster info
@@ -96,60 +96,68 @@ func NewRegistry(clusterName string) *Registry {
 			[]string{"cluster", "queue"},
 		),
 
-		TotalRunningJobs: prometheus.NewGauge(
+		TotalRunningJobs: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "qstat_total_running_jobs",
 				Help: "Total number of running jobs",
 			},
+			[]string{"cluster"},
 		),
 
-		TotalRJobs: prometheus.NewGauge(
+		TotalRJobs: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "qstat_total_r_jobs",
 				Help: "Total number of Running (R) jobs",
 			},
+			[]string{"cluster"},
 		),
 
-		TotalHJobs: prometheus.NewGauge(
+		TotalHJobs: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "qstat_total_h_jobs",
 				Help: "Total number of Hold (H) jobs",
 			},
+			[]string{"cluster"},
 		),
 
-		TotalFJobs: prometheus.NewGauge(
+		TotalFJobs: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "qstat_total_f_jobs",
 				Help: "Total number of Finished (F) jobs",
 			},
+			[]string{"cluster"},
 		),
 
-		TotalQJobs: prometheus.NewGauge(
+		TotalQJobs: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "qstat_total_q_jobs",
 				Help: "Total number of Queuing (Q) jobs",
 			},
+			[]string{"cluster"},
 		),
 
-		TotalEJobs: prometheus.NewGauge(
+		TotalEJobs: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "qstat_total_e_jobs",
 				Help: "Total number of Error (E) jobs",
 			},
+			[]string{"cluster"},
 		),
 
-		TotalBJobs: prometheus.NewGauge(
+		TotalBJobs: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "qstat_total_b_jobs",
 				Help: "Total number of Array Job Running (B) jobs",
 			},
+			[]string{"cluster"},
 		),
 
-		TotalAllJobs: prometheus.NewGauge(
+		TotalAllJobs: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "qstat_total_all_jobs",
 				Help: "Total number of all jobs",
 			},
+			[]string{"cluster"},
 		),
 
 		JobsByStatus: prometheus.NewGaugeVec(
@@ -278,18 +286,20 @@ func NewRegistry(clusterName string) *Registry {
 			},
 		),
 
-		QueueSummaryRunning: prometheus.NewGauge(
+		QueueSummaryRunning: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "qstatq_total_running",
 				Help: "Total running jobs from qstat -q summary",
 			},
+			[]string{"cluster"},
 		),
 
-		QueueSummaryQueued: prometheus.NewGauge(
+		QueueSummaryQueued: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "qstatq_total_queued",
 				Help: "Total queued jobs from qstat -q summary",
 			},
+			[]string{"cluster"},
 		),
 
 		QueueQueuedByQueue: prometheus.NewGaugeVec(

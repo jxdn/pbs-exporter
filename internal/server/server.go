@@ -75,8 +75,8 @@ func (s *Server) updateQueueSummaryMetrics() {
 		return
 	}
 	running, queued := s.pbsClient.ParseQstatQSummary(output)
-	s.registry.QueueSummaryRunning.Set(float64(running))
-	s.registry.QueueSummaryQueued.Set(float64(queued))
+	s.registry.QueueSummaryRunning.WithLabelValues(clusterName).Set(float64(running))
+	s.registry.QueueSummaryQueued.WithLabelValues(clusterName).Set(float64(queued))
 
 	// Per-queue values (only queued)
 	_, queByQ := s.pbsClient.ParseQstatQPerQueue(output)
@@ -113,14 +113,14 @@ func (s *Server) updateJobMetricsFromData(data *pbs.JobData) {
 	}
 
 	// Update total metrics
-	s.registry.TotalRunningJobs.Set(float64(data.TotalRunning))
-	s.registry.TotalRJobs.Set(float64(data.TotalR))
-	s.registry.TotalHJobs.Set(float64(data.TotalH))
-	s.registry.TotalFJobs.Set(float64(data.TotalF))
-	s.registry.TotalQJobs.Set(float64(data.TotalQ))
-	s.registry.TotalEJobs.Set(float64(data.TotalE))
-	s.registry.TotalBJobs.Set(float64(data.TotalB))
-	s.registry.TotalAllJobs.Set(float64(data.TotalAll))
+	s.registry.TotalRunningJobs.WithLabelValues(clusterName).Set(float64(data.TotalRunning))
+	s.registry.TotalRJobs.WithLabelValues(clusterName).Set(float64(data.TotalR))
+	s.registry.TotalHJobs.WithLabelValues(clusterName).Set(float64(data.TotalH))
+	s.registry.TotalFJobs.WithLabelValues(clusterName).Set(float64(data.TotalF))
+	s.registry.TotalQJobs.WithLabelValues(clusterName).Set(float64(data.TotalQ))
+	s.registry.TotalEJobs.WithLabelValues(clusterName).Set(float64(data.TotalE))
+	s.registry.TotalBJobs.WithLabelValues(clusterName).Set(float64(data.TotalB))
+	s.registry.TotalAllJobs.WithLabelValues(clusterName).Set(float64(data.TotalAll))
 }
 
 // updateNodeMetricsFromData updates node metrics from parsed data
