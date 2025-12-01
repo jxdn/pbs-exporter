@@ -292,7 +292,15 @@ func (c *Client) ParsePbsnodesOutput(output string) *NodeData {
 			}
 
 			// Parse state and count
-			switch state {
+			// Normalize state: <various> -> busy, state-unknown -> offline
+			normalizedState := state
+			if state == "<various>" {
+				normalizedState = "busy"
+			} else if state == "state-unknown" {
+				normalizedState = "offline"
+			}
+
+			switch normalizedState {
 			case "free":
 				data.CountFree++
 			case "busy":
@@ -304,6 +312,9 @@ func (c *Client) ParsePbsnodesOutput(output string) *NodeData {
 			default:
 				data.CountDown++ // unknown states counted as down
 			}
+
+			// Store normalized state in NodeInfo
+			state = normalizedState
 
 			// Parse memory
 			memParts := strings.Split(memField, "/")
