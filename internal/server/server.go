@@ -70,6 +70,7 @@ func (s *Server) updateNodeMetrics() {
 
 // updateQueueSummaryMetrics updates totals from `qstat -q`
 func (s *Server) updateQueueSummaryMetrics() {
+	clusterName := s.registry.GetClusterName()
 	output, err := s.pbsClient.GetQstatQOutput()
 	if err != nil {
 		return
@@ -81,12 +82,13 @@ func (s *Server) updateQueueSummaryMetrics() {
 	// Per-queue values (only queued)
 	_, queByQ := s.pbsClient.ParseQstatQPerQueue(output)
 	for q, v := range queByQ {
-		s.registry.QueueQueuedByQueue.WithLabelValues(q).Set(float64(v))
+		s.registry.QueueQueuedByQueue.WithLabelValues(clusterName, q).Set(float64(v))
 	}
 }
 
 // updateTopQueuedUsers updates metrics for the top 5 users with queued jobs
 func (s *Server) updateTopQueuedUsers(queuedJobsByUser map[string]int) {
+	clusterName := s.registry.GetClusterName()
 	// Create a slice of user-count pairs for sorting
 	type userCount struct {
 		user  string
@@ -110,15 +112,16 @@ func (s *Server) updateTopQueuedUsers(queuedJobsByUser map[string]int) {
 		topCount = len(users)
 	}
 	for i := 0; i < topCount; i++ {
-		s.registry.QueuedJobsByUser.WithLabelValues(users[i].user).Set(float64(users[i].count))
+		s.registry.QueuedJobsByUser.WithLabelValues(clusterName, users[i].user).Set(float64(users[i].count))
 	}
 }
 
 // updateJobMetricsFromData updates job metrics from parsed data
 func (s *Server) updateJobMetricsFromData(data *pbs.JobData) {
+	clusterName := s.registry.GetClusterName()
 	// Update user job counts
 	for user, count := range data.UserJobCount {
-		s.registry.RunningJobsByUser.WithLabelValues(user).Set(float64(count))
+		s.registry.RunningJobsByUser.WithLabelValues(clusterName, user).Set(float64(count))
 	}
 
 	// Update queued jobs by user (top 5 only)
@@ -127,13 +130,13 @@ func (s *Server) updateJobMetricsFromData(data *pbs.JobData) {
 	// Update queue metrics
 	queues := []string{"interactive", "medium", "long", "large", "small", "special", "AISG_debug", "AISG_large", "AISG_guest"}
 	for _, queue := range queues {
-		s.registry.RunningJobsByQueue.WithLabelValues(queue).Set(float64(data.QueueJobCount[queue]))
-		s.registry.JobsInQueue.WithLabelValues(queue).Set(float64(data.QueueTotalCount[queue]))
+		s.registry.RunningJobsByQueue.WithLabelValues(clusterName, queue).Set(float64(data.QueueJobCount[queue]))
+		s.registry.JobsInQueue.WithLabelValues(clusterName, queue).Set(float64(data.QueueTotalCount[queue]))
 	}
 
 	// Update status metrics
 	for status, count := range data.StatusCount {
-		s.registry.JobsByStatus.WithLabelValues(status).Set(float64(count))
+		s.registry.JobsByStatus.WithLabelValues(clusterName, status).Set(float64(count))
 	}
 
 	// Update total metrics
@@ -149,6 +152,7 @@ func (s *Server) updateJobMetricsFromData(data *pbs.JobData) {
 
 // updateNodeMetricsFromData updates node metrics from parsed data
 func (s *Server) updateNodeMetricsFromData(data *pbs.NodeData) {
+	clusterName := s.registry.GetClusterName()
 	// Update node count metrics
 	s.registry.NodeCountFree.Set(float64(data.CountFree))
 	s.registry.NodeCountBusy.Set(float64(data.CountBusy))
@@ -169,27 +173,27 @@ func (s *Server) updateNodeMetricsFromData(data *pbs.NodeData) {
 		case "down":
 			stateValue = 4
 		}
-		s.registry.NodeState.WithLabelValues(nodeName).Set(stateValue)
+		s.registry.NodeState.WithLabelValues(clusterName, nodeName).Set(stateValue)
 
 		// Set node jobs
-		s.registry.NodeJobs.WithLabelValues(nodeName).Set(float64(nodeInfo.Jobs))
+		s.registry.NodeJobs.WithLabelValues(clusterName, nodeName).Set(float64(nodeInfo.Jobs))
 
 		// Set CPU metrics
 		usedCpus := nodeInfo.CPUsTotal - nodeInfo.CPUsAvailable
-		s.registry.NodeCpusAvailable.WithLabelValues(nodeName).Set(float64(nodeInfo.CPUsAvailable))
-		s.registry.NodeCpusUsed.WithLabelValues(nodeName).Set(float64(usedCpus))
-		s.registry.NodeCpusTotal.WithLabelValues(nodeName).Set(float64(nodeInfo.CPUsTotal))
+		s.registry.NodeCpusAvailable.WithLabelValues(clusterName, nodeName).Set(float64(nodeInfo.CPUsAvailable))
+		s.registry.NodeCpusUsed.WithLabelValues(clusterName, nodeName).Set(float64(usedCpus))
+		s.registry.NodeCpusTotal.WithLabelValues(clusterName, nodeName).Set(float64(nodeInfo.CPUsTotal))
 
 		// Set GPU metrics
 		usedGpus := nodeInfo.GPUsTotal - nodeInfo.GPUsAvailable
-		s.registry.NodeGpusAvailable.WithLabelValues(nodeName).Set(float64(nodeInfo.GPUsAvailable))
-		s.registry.NodeGpusUsed.WithLabelValues(nodeName).Set(float64(usedGpus))
-		s.registry.NodeGpusTotal.WithLabelValues(nodeName).Set(float64(nodeInfo.GPUsTotal))
+		s.registry.NodeGpusAvailable.WithLabelValues(clusterName, nodeName).Set(float64(nodeInfo.GPUsAvailable))
+		s.registry.NodeGpusUsed.WithLabelValues(clusterName, nodeName).Set(float64(usedGpus))
+		s.registry.NodeGpusTotal.WithLabelValues(clusterName, nodeName).Set(float64(nodeInfo.GPUsTotal))
 
 		// Set memory metrics
 		usedMemory := nodeInfo.MemoryTotal - nodeInfo.MemoryAvailable
-		s.registry.NodeMemoryAvailable.WithLabelValues(nodeName).Set(nodeInfo.MemoryAvailable)
-		s.registry.NodeMemoryUsed.WithLabelValues(nodeName).Set(usedMemory)
-		s.registry.NodeMemoryTotal.WithLabelValues(nodeName).Set(nodeInfo.MemoryTotal)
+		s.registry.NodeMemoryAvailable.WithLabelValues(clusterName, nodeName).Set(nodeInfo.MemoryAvailable)
+		s.registry.NodeMemoryUsed.WithLabelValues(clusterName, nodeName).Set(usedMemory)
+		s.registry.NodeMemoryTotal.WithLabelValues(clusterName, nodeName).Set(nodeInfo.MemoryTotal)
 	}
 }

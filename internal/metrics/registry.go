@@ -45,20 +45,31 @@ type Registry struct {
 	QueueSummaryQueued  prometheus.Gauge
 	QueueQueuedByQueue  *prometheus.GaugeVec
 
+	// Cluster info
+	ClusterInfo *prometheus.GaugeVec
+
+	// Cluster name
+	clusterName string
+
 	// Prometheus registry
 	registry *prometheus.Registry
 }
 
 // NewRegistry creates and returns a new metrics registry
-func NewRegistry() *Registry {
+func NewRegistry(clusterName string) *Registry {
+	if clusterName == "" {
+		clusterName = "default"
+	}
+
 	r := &Registry{
+		clusterName: clusterName,
 		// Job metrics
 		RunningJobsByUser: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "qstat_running_jobs_by_user",
 				Help: "Number of running jobs per user",
 			},
-			[]string{"user"},
+			[]string{"cluster", "user"},
 		),
 
 		QueuedJobsByUser: prometheus.NewGaugeVec(
@@ -66,7 +77,7 @@ func NewRegistry() *Registry {
 				Name: "qstat_queued_jobs_by_user",
 				Help: "Number of queued jobs per user",
 			},
-			[]string{"user"},
+			[]string{"cluster", "user"},
 		),
 
 		RunningJobsByQueue: prometheus.NewGaugeVec(
@@ -74,7 +85,7 @@ func NewRegistry() *Registry {
 				Name: "qstat_running_jobs_by_queue",
 				Help: "Number of running jobs per queue",
 			},
-			[]string{"queue"},
+			[]string{"cluster", "queue"},
 		),
 
 		JobsInQueue: prometheus.NewGaugeVec(
@@ -82,7 +93,7 @@ func NewRegistry() *Registry {
 				Name: "qstat_jobs_in_queue",
 				Help: "Total number of jobs in each queue",
 			},
-			[]string{"queue"},
+			[]string{"cluster", "queue"},
 		),
 
 		TotalRunningJobs: prometheus.NewGauge(
@@ -146,7 +157,7 @@ func NewRegistry() *Registry {
 				Name: "qstat_jobs_by_status",
 				Help: "Number of jobs by status",
 			},
-			[]string{"status"},
+			[]string{"cluster", "status"},
 		),
 
 		// Node metrics
@@ -155,7 +166,7 @@ func NewRegistry() *Registry {
 				Name: "pbs_node_state",
 				Help: "Node state (1=free, 2=busy, 3=offline, 4=down)",
 			},
-			[]string{"node"},
+			[]string{"cluster", "node"},
 		),
 
 		NodeJobs: prometheus.NewGaugeVec(
@@ -163,7 +174,7 @@ func NewRegistry() *Registry {
 				Name: "pbs_node_jobs",
 				Help: "Number of jobs on node",
 			},
-			[]string{"node"},
+			[]string{"cluster", "node"},
 		),
 
 		NodeCpusAvailable: prometheus.NewGaugeVec(
@@ -171,7 +182,7 @@ func NewRegistry() *Registry {
 				Name: "pbs_node_cpus_available",
 				Help: "Available CPUs on node",
 			},
-			[]string{"node"},
+			[]string{"cluster", "node"},
 		),
 
 		NodeCpusUsed: prometheus.NewGaugeVec(
@@ -179,7 +190,7 @@ func NewRegistry() *Registry {
 				Name: "pbs_node_cpus_used",
 				Help: "Used CPUs on node",
 			},
-			[]string{"node"},
+			[]string{"cluster", "node"},
 		),
 
 		NodeCpusTotal: prometheus.NewGaugeVec(
@@ -187,7 +198,7 @@ func NewRegistry() *Registry {
 				Name: "pbs_node_cpus_total",
 				Help: "Total CPUs on node",
 			},
-			[]string{"node"},
+			[]string{"cluster", "node"},
 		),
 
 		NodeGpusAvailable: prometheus.NewGaugeVec(
@@ -195,7 +206,7 @@ func NewRegistry() *Registry {
 				Name: "pbs_node_gpus_available",
 				Help: "Available GPUs on node",
 			},
-			[]string{"node"},
+			[]string{"cluster", "node"},
 		),
 
 		NodeGpusUsed: prometheus.NewGaugeVec(
@@ -203,7 +214,7 @@ func NewRegistry() *Registry {
 				Name: "pbs_node_gpus_used",
 				Help: "Used GPUs on node",
 			},
-			[]string{"node"},
+			[]string{"cluster", "node"},
 		),
 
 		NodeGpusTotal: prometheus.NewGaugeVec(
@@ -211,7 +222,7 @@ func NewRegistry() *Registry {
 				Name: "pbs_node_gpus_total",
 				Help: "Total GPUs on node",
 			},
-			[]string{"node"},
+			[]string{"cluster", "node"},
 		),
 
 		NodeMemoryAvailable: prometheus.NewGaugeVec(
@@ -219,7 +230,7 @@ func NewRegistry() *Registry {
 				Name: "pbs_node_memory_available_gb",
 				Help: "Available memory on node in GB",
 			},
-			[]string{"node"},
+			[]string{"cluster", "node"},
 		),
 
 		NodeMemoryUsed: prometheus.NewGaugeVec(
@@ -227,7 +238,7 @@ func NewRegistry() *Registry {
 				Name: "pbs_node_memory_used_gb",
 				Help: "Used memory on node in GB",
 			},
-			[]string{"node"},
+			[]string{"cluster", "node"},
 		),
 
 		NodeMemoryTotal: prometheus.NewGaugeVec(
@@ -235,7 +246,7 @@ func NewRegistry() *Registry {
 				Name: "pbs_node_memory_total_gb",
 				Help: "Total memory on node in GB",
 			},
-			[]string{"node"},
+			[]string{"cluster", "node"},
 		),
 
 		// Node count metrics
@@ -286,7 +297,15 @@ func NewRegistry() *Registry {
 				Name: "qstat_que_by_queue",
 				Help: "Queued jobs per queue from qstat -q",
 			},
-			[]string{"queue"},
+			[]string{"cluster", "queue"},
+		),
+
+		ClusterInfo: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_cluster_info",
+				Help: "PBS cluster information",
+			},
+			[]string{"cluster"},
 		),
 
 		registry: prometheus.NewRegistry(),
@@ -294,6 +313,9 @@ func NewRegistry() *Registry {
 
 	// Register all metrics
 	r.registerMetrics()
+
+	// Set cluster info metric
+	r.ClusterInfo.WithLabelValues(clusterName).Set(1)
 
 	return r
 }
@@ -332,7 +354,13 @@ func (r *Registry) registerMetrics() {
 		r.QueueSummaryRunning,
 		r.QueueSummaryQueued,
 		r.QueueQueuedByQueue,
+		r.ClusterInfo,
 	)
+}
+
+// GetClusterName returns the cluster name
+func (r *Registry) GetClusterName() string {
+	return r.clusterName
 }
 
 // GetRegistry returns the underlying Prometheus registry
