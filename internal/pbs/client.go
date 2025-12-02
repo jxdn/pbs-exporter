@@ -332,7 +332,7 @@ func (c *Client) ParsePbsnodesOutput(output string) *NodeData {
 			freeGpus, totalGpus := parseFraction(gpuField)
 
 			data.Nodes[nodeName] = NodeInfo{
-				State:           state,
+				State:           normalizedState,
 				Jobs:            jobs,
 				CPUsAvailable:   freeCpus,
 				CPUsTotal:       totalCpus,
