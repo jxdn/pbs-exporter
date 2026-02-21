@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"log"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -70,11 +71,12 @@ func (c *Client) GetPbsVersion() string {
 			return "unknown"
 		}
 	}
-	version := strings.TrimSpace(string(output))
-	if idx := strings.Index(version, "\n"); idx != -1 {
-		version = version[:idx]
+	re := regexp.MustCompile(`(\d{4}\.\d+\.\d+)`)
+	matches := re.FindStringSubmatch(string(output))
+	if len(matches) > 1 {
+		return matches[1]
 	}
-	return version
+	return "unknown"
 }
 
 // JobData represents parsed job information
