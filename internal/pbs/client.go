@@ -71,10 +71,10 @@ func (c *Client) GetPbsVersion() string {
 			return "unknown"
 		}
 	}
-	re := regexp.MustCompile(`(\d{4}\.\d+\.\d+)`)
-	matches := re.FindStringSubmatch(string(output))
-	if len(matches) > 1 {
-		return matches[1]
+	re := regexp.MustCompile(`\d{4}\.\d+\.\d+`)
+	version := re.FindString(string(output))
+	if version != "" {
+		return version
 	}
 	return "unknown"
 }
