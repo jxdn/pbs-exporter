@@ -85,11 +85,11 @@ Entry point that orchestrates all components:
    ./pbs-exporter
    ```
 
-3. Access metrics at `http://localhost:8889/metrics`
+3. Access metrics at `http://localhost:8888/metrics`
 
 ## Configuration
 
-The application runs on port 8889 by default and updates metrics every 60 seconds. These values can be modified in the `main.go` file.
+The application runs on port 8888 by default and updates metrics every 60 seconds. These values can be modified in the `main.go` file.
 
 ## Dependencies
 

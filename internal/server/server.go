@@ -6,7 +6,7 @@ import (
 )
 
 type Server struct {
-	registry *metrics.Registry
+	registry  *metrics.Registry
 	pbsClient *pbs.Client
 }
 
@@ -22,6 +22,12 @@ func (s *Server) UpdateMetrics() {
 	s.updateNodeMetrics()
 	s.updateQueueMetrics()
 	s.updateServerMetrics()
+	s.updateVersionMetric()
+}
+
+func (s *Server) updateVersionMetric() {
+	version := s.pbsClient.GetPbsVersion()
+	s.registry.PBSVersion.WithLabelValues(version).Set(1)
 }
 
 func (s *Server) updateJobMetrics() {

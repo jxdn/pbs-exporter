@@ -37,7 +37,7 @@ func main() {
 	}()
 
 	// Start HTTP server
-	log.Println("PBS cluster monitoring server starting on 0.0.0.0:8889")
-	log.Println("Metrics available at http://0.0.0.0:8889/metrics")
-	log.Fatal(http.ListenAndServe("0.0.0.0:8889", promhttp.HandlerFor(registry.GetRegistry(), promhttp.HandlerOpts{})))
+	log.Println("PBS cluster monitoring server starting on 0.0.0.0:8888")
+	log.Println("Metrics available at http://0.0.0.0:8888/metrics")
+	log.Fatal(http.ListenAndServe("0.0.0.0:8888", promhttp.HandlerFor(registry.GetRegistry(), promhttp.HandlerOpts{})))
 }

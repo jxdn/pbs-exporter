@@ -60,30 +60,47 @@ func (c *Client) GetQstatBfOutput() (string, error) {
 	return string(output), nil
 }
 
+func (c *Client) GetPbsVersion() string {
+	cmd := exec.Command("qstat", "--version")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		cmd = exec.Command("pbsnodes", "--version")
+		output, err = cmd.CombinedOutput()
+		if err != nil {
+			return "unknown"
+		}
+	}
+	version := strings.TrimSpace(string(output))
+	if idx := strings.Index(version, "\n"); idx != -1 {
+		version = version[:idx]
+	}
+	return version
+}
+
 // JobData represents parsed job information
 type JobData struct {
-	UserJobCount      map[string]int
-	QueuedJobsByUser  map[string]int
-	QueueJobCount     map[string]int
-	QueueTotalCount   map[string]int
-	StatusCount       map[string]int
-	TotalR            int
-	TotalH            int
-	TotalF            int
-	TotalQ            int
-	TotalE            int
-	TotalB            int
-	TotalAll          int
-	TotalRunning      int
+	UserJobCount     map[string]int
+	QueuedJobsByUser map[string]int
+	QueueJobCount    map[string]int
+	QueueTotalCount  map[string]int
+	StatusCount      map[string]int
+	TotalR           int
+	TotalH           int
+	TotalF           int
+	TotalQ           int
+	TotalE           int
+	TotalB           int
+	TotalAll         int
+	TotalRunning     int
 }
 
 // NodeData represents parsed node information
 type NodeData struct {
-	Nodes          map[string]NodeInfo
-	CountFree      int
-	CountBusy      int
-	CountOffline   int
-	CountDown      int
+	Nodes        map[string]NodeInfo
+	CountFree    int
+	CountBusy    int
+	CountOffline int
+	CountDown    int
 }
 
 // NodeInfo represents information about a single node
@@ -100,11 +117,11 @@ type NodeInfo struct {
 
 // QueueInfo represents information about a single queue
 type QueueInfo struct {
-	Running   int
-	Queued    int
-	Enabled   bool
-	Started   bool
-	Walltime  int
+	Running  int
+	Queued   int
+	Enabled  bool
+	Started  bool
+	Walltime int
 }
 
 // QueueData represents parsed queue information from qstat -q
@@ -517,9 +534,9 @@ func (c *Client) ParsePbsnodesOutput(output string) *NodeData {
 			nodeName := fields[0]
 			state := fields[1]
 			njobs := fields[2]
-			memField := fields[5]    // mem f/t
-			cpuField := fields[6]    // ncpus f/t  
-			gpuField := fields[8]    // ngpus f/t
+			memField := fields[5] // mem f/t
+			cpuField := fields[6] // ncpus f/t
+			gpuField := fields[8] // ngpus f/t
 
 			// Parse njobs
 			jobs := 0

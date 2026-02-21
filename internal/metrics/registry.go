@@ -31,8 +31,8 @@ type Registry struct {
 	NodeMemoryUsed      *prometheus.GaugeVec
 	NodeMemoryTotal     *prometheus.GaugeVec
 
-	NodeCpuUtilization   *prometheus.GaugeVec
-	NodeGpuUtilization   *prometheus.GaugeVec
+	NodeCpuUtilization    *prometheus.GaugeVec
+	NodeGpuUtilization    *prometheus.GaugeVec
 	NodeMemoryUtilization *prometheus.GaugeVec
 
 	NodeCountFree    prometheus.Gauge
@@ -40,12 +40,12 @@ type Registry struct {
 	NodeCountOffline prometheus.Gauge
 	NodeCountDown    prometheus.Gauge
 
-	ClusterCpusTotal     prometheus.Gauge
-	ClusterCpusAvailable prometheus.Gauge
-	ClusterCpusUsed      prometheus.Gauge
-	ClusterGpusTotal     prometheus.Gauge
-	ClusterGpusAvailable prometheus.Gauge
-	ClusterGpusUsed      prometheus.Gauge
+	ClusterCpusTotal         prometheus.Gauge
+	ClusterCpusAvailable     prometheus.Gauge
+	ClusterCpusUsed          prometheus.Gauge
+	ClusterGpusTotal         prometheus.Gauge
+	ClusterGpusAvailable     prometheus.Gauge
+	ClusterGpusUsed          prometheus.Gauge
 	ClusterMemoryTotalGb     prometheus.Gauge
 	ClusterMemoryAvailableGb prometheus.Gauge
 	ClusterMemoryUsedGb      prometheus.Gauge
@@ -75,6 +75,7 @@ type Registry struct {
 	ServerMaxArraySize       prometheus.Gauge
 	ServerJobHistoryEnabled  prometheus.Gauge
 	ServerJobHistoryDuration prometheus.Gauge
+	PBSVersion               *prometheus.GaugeVec
 
 	registry *prometheus.Registry
 }
@@ -554,6 +555,14 @@ func NewRegistry() *Registry {
 			},
 		),
 
+		PBSVersion: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_version_info",
+				Help: "PBS version information",
+			},
+			[]string{"version"},
+		),
+
 		registry: prometheus.NewRegistry(),
 	}
 
@@ -627,6 +636,7 @@ func (r *Registry) registerMetrics() {
 		r.ServerMaxArraySize,
 		r.ServerJobHistoryEnabled,
 		r.ServerJobHistoryDuration,
+		r.PBSVersion,
 	)
 }
 
