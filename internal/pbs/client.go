@@ -49,6 +49,17 @@ func (c *Client) GetQstatQOutput() (string, error) {
 	return string(output), nil
 }
 
+// GetQstatBfOutput executes qstat -Bf and returns the output
+func (c *Client) GetQstatBfOutput() (string, error) {
+	cmd := exec.Command("qstat", "-Bf")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("Error running qstat -Bf: %v", err)
+		return "", err
+	}
+	return string(output), nil
+}
+
 // JobData represents parsed job information
 type JobData struct {
 	UserJobCount      map[string]int
@@ -87,6 +98,40 @@ type NodeInfo struct {
 	MemoryTotal     float64
 }
 
+// QueueInfo represents information about a single queue
+type QueueInfo struct {
+	Running   int
+	Queued    int
+	Enabled   bool
+	Started   bool
+	Walltime  int
+}
+
+// QueueData represents parsed queue information from qstat -q
+type QueueData struct {
+	Queues map[string]QueueInfo
+}
+
+// ServerData represents parsed server information from qstat -Bf
+type ServerData struct {
+	State              string
+	Scheduling         bool
+	TotalJobs          int
+	JobsRunning        int
+	JobsQueued         int
+	JobsHeld           int
+	JobsWaiting        int
+	JobsExiting        int
+	ResourcesNcpus     int
+	ResourcesMemGB     float64
+	ResourcesNodect    int
+	LicensesAvailable  int
+	LicensesUsed       int
+	MaxArraySize       int
+	JobHistoryEnabled  bool
+	JobHistoryDuration int
+}
+
 // ParseQstatOutput parses qstat output and returns structured job data
 func (c *Client) ParseQstatOutput(output string) *JobData {
 	data := &JobData{
@@ -95,13 +140,6 @@ func (c *Client) ParseQstatOutput(output string) *JobData {
 		QueueJobCount:    make(map[string]int),
 		QueueTotalCount:  make(map[string]int),
 		StatusCount:      make(map[string]int),
-	}
-
-	// Initialize all queues with 0
-	queues := []string{"interactive", "medium", "long", "large", "small", "special", "AISG_debug", "AISG_large", "AISG_guest"}
-	for _, queue := range queues {
-		data.QueueJobCount[queue] = 0
-		data.QueueTotalCount[queue] = 0
 	}
 
 	scanner := bufio.NewScanner(strings.NewReader(output))
@@ -252,6 +290,204 @@ func (c *Client) ParseQstatQPerQueue(output string) (runningByQueue map[string]i
 	return
 }
 
+// ParseQstatQFull parses `qstat -q` output and returns full queue data including state
+func (c *Client) ParseQstatQFull(output string) *QueueData {
+	data := &QueueData{
+		Queues: make(map[string]QueueInfo),
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(output))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "server:") || strings.HasPrefix(strings.ToLower(line), "queue ") || strings.HasPrefix(line, "---") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 9 {
+			continue
+		}
+		queueName := fields[0]
+		walltimeStr := fields[2]
+		stateStr := ""
+		if len(fields) >= 10 {
+			stateStr = fields[len(fields)-2] + " " + fields[len(fields)-1]
+		} else if len(fields) >= 9 {
+			stateStr = fields[len(fields)-1]
+		}
+
+		var nums []int
+		for _, f := range fields {
+			if n, err := strconv.Atoi(f); err == nil {
+				nums = append(nums, n)
+			}
+		}
+
+		running := 0
+		queued := 0
+		if len(nums) >= 2 {
+			running = nums[len(nums)-2]
+			queued = nums[len(nums)-1]
+		}
+
+		enabled := strings.Contains(stateStr, "E")
+		started := strings.Contains(stateStr, "R")
+
+		walltime := parseWalltimeToSeconds(walltimeStr)
+
+		data.Queues[queueName] = QueueInfo{
+			Running:  running,
+			Queued:   queued,
+			Enabled:  enabled,
+			Started:  started,
+			Walltime: walltime,
+		}
+	}
+	return data
+}
+
+// ParseQstatBf parses `qstat -Bf` output and returns server data
+func (c *Client) ParseQstatBf(output string) *ServerData {
+	data := &ServerData{}
+
+	scanner := bufio.NewScanner(strings.NewReader(output))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		if strings.HasPrefix(line, "server_state") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				data.State = strings.TrimSpace(parts[1])
+			}
+		} else if strings.HasPrefix(line, "scheduling") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				data.Scheduling = strings.TrimSpace(parts[1]) == "True"
+			}
+		} else if strings.HasPrefix(line, "total_jobs") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				data.TotalJobs, _ = strconv.Atoi(strings.TrimSpace(parts[1]))
+			}
+		} else if strings.HasPrefix(line, "state_count") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				parseStateCount(strings.TrimSpace(parts[1]), data)
+			}
+		} else if strings.HasPrefix(line, "resources_assigned.ncpus") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				data.ResourcesNcpus, _ = strconv.Atoi(strings.TrimSpace(parts[1]))
+			}
+		} else if strings.HasPrefix(line, "resources_assigned.mem") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				data.ResourcesMemGB = parseMemoryToGB(strings.TrimSpace(parts[1]))
+			}
+		} else if strings.HasPrefix(line, "resources_assigned.nodect") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				data.ResourcesNodect, _ = strconv.Atoi(strings.TrimSpace(parts[1]))
+			}
+		} else if strings.HasPrefix(line, "license_count") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				parseLicenseCount(strings.TrimSpace(parts[1]), data)
+			}
+		} else if strings.HasPrefix(line, "max_array_size") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				data.MaxArraySize, _ = strconv.Atoi(strings.TrimSpace(parts[1]))
+			}
+		} else if strings.HasPrefix(line, "job_history_enable") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				data.JobHistoryEnabled = strings.TrimSpace(parts[1]) == "True"
+			}
+		} else if strings.HasPrefix(line, "job_history_duration") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				data.JobHistoryDuration = parseWalltimeToHours(strings.TrimSpace(parts[1]))
+			}
+		}
+	}
+
+	return data
+}
+
+func parseStateCount(s string, data *ServerData) {
+	parts := strings.Fields(s)
+	for _, part := range parts {
+		kv := strings.SplitN(part, ":", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(kv[0])
+		val, _ := strconv.Atoi(strings.TrimSpace(kv[1]))
+		switch key {
+		case "Running":
+			data.JobsRunning = val
+		case "Queued":
+			data.JobsQueued = val
+		case "Held":
+			data.JobsHeld = val
+		case "Waiting":
+			data.JobsWaiting = val
+		case "Exiting":
+			data.JobsExiting = val
+		}
+	}
+}
+
+func parseLicenseCount(s string, data *ServerData) {
+	parts := strings.Fields(s)
+	for _, part := range parts {
+		kv := strings.SplitN(part, ":", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(kv[0])
+		val, _ := strconv.Atoi(strings.TrimSpace(kv[1]))
+		switch key {
+		case "Avail_Global":
+			data.LicensesAvailable = val
+		case "Used":
+			data.LicensesUsed = val
+		}
+	}
+}
+
+func parseWalltimeToSeconds(s string) int {
+	if s == "--" || s == "" {
+		return 0
+	}
+
+	parts := strings.Split(s, ":")
+	if len(parts) == 3 {
+		hours, _ := strconv.Atoi(parts[0])
+		mins, _ := strconv.Atoi(parts[1])
+		secs, _ := strconv.Atoi(parts[2])
+		return hours*3600 + mins*60 + secs
+	} else if len(parts) == 2 {
+		mins, _ := strconv.Atoi(parts[0])
+		secs, _ := strconv.Atoi(parts[1])
+		return mins*60 + secs
+	}
+	return 0
+}
+
+func parseWalltimeToHours(s string) int {
+	if s == "--" || s == "" {
+		return 0
+	}
+
+	parts := strings.Split(s, ":")
+	if len(parts) >= 1 {
+		hours, _ := strconv.Atoi(parts[0])
+		return hours
+	}
+	return 0
+}
+
 // ParsePbsnodesOutput parses pbsnodes output and returns structured node data
 func (c *Client) ParsePbsnodesOutput(output string) *NodeData {
 	data := &NodeData{
@@ -303,14 +539,14 @@ func (c *Client) ParsePbsnodesOutput(output string) *NodeData {
 			switch normalizedState {
 			case "free":
 				data.CountFree++
-			case "busy":
+			case "job-busy":
 				data.CountBusy++
 			case "offline":
 				data.CountOffline++
 			case "down":
 				data.CountDown++
 			default:
-				data.CountDown++ // unknown states counted as down
+				data.CountDown++
 			}
 
 			// Store normalized state in NodeInfo

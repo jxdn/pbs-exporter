@@ -3,7 +3,6 @@ package main
 import (
 	"log"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -14,14 +13,8 @@ import (
 )
 
 func main() {
-	// Get cluster name from environment variable, default to "default"
-	clusterName := os.Getenv("PBS_CLUSTER_NAME")
-	if clusterName == "" {
-		clusterName = "default"
-	}
-
-	// Initialize metrics registry with cluster name
-	registry := metrics.NewRegistry(clusterName)
+	// Initialize metrics registry
+	registry := metrics.NewRegistry()
 
 	// Initialize PBS client
 	pbsClient := pbs.NewClient()
@@ -44,7 +37,7 @@ func main() {
 	}()
 
 	// Start HTTP server
-	log.Printf("PBS cluster monitoring server starting on 0.0.0.0:8888 (cluster: %s)", clusterName)
-	log.Println("Metrics available at http://0.0.0.0:8888/metrics")
-	log.Fatal(http.ListenAndServe("0.0.0.0:8888", promhttp.HandlerFor(registry.GetRegistry(), promhttp.HandlerOpts{})))
+	log.Println("PBS cluster monitoring server starting on 0.0.0.0:8889")
+	log.Println("Metrics available at http://0.0.0.0:8889/metrics")
+	log.Fatal(http.ListenAndServe("0.0.0.0:8889", promhttp.HandlerFor(registry.GetRegistry(), promhttp.HandlerOpts{})))
 }

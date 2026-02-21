@@ -2,17 +2,12 @@
 
 A Prometheus exporter for PBS (Portable Batch System) cluster monitoring.
 
-![PBS Cluster Dashboard](docs/pbs_dashboard.png)
-
-*Real-time PBS cluster monitoring dashboard showing job status, node availability, and resource utilization*
-
 ## Features
 
 - **Job Metrics**: Track running jobs by user, queue, and status
 - **Node Metrics**: Monitor node states, CPU/GPU usage, and memory utilization
-- **Queue Metrics**: Track job distribution across different queues
+- **Queue Metrics**: Track job distribution across different queues (dynamically discovered)
 - **Real-time Updates**: Metrics are updated every 60 seconds
-- **Dashboard Integration**: Compatible with Grafana and other monitoring dashboards
 
 ## Architecture
 
@@ -22,7 +17,7 @@ The application is structured into several packages for better maintainability:
 Contains all Prometheus metrics definitions and registry management:
 - Job-related metrics (running jobs by user/queue, total jobs by status)
 - Node-related metrics (state, CPU/GPU/memory usage)
-- Node count metrics (free, busy, offline, down nodes)
+- Node count metrics (free, job-busy, offline, down nodes)
 
 ### `internal/pbs`
 Handles PBS command execution and data parsing:
@@ -60,7 +55,7 @@ Entry point that orchestrates all components:
 - `qstat_jobs_by_status`: Number of jobs by status
 
 ### Node Metrics
-- `pbs_node_state`: Node state (1=free, 2=busy, 3=offline, 4=down)
+- `pbs_node_state`: Node state (1=free, 2=job-busy, 3=offline, 4=down)
 - `pbs_node_jobs`: Number of jobs on node
 - `pbs_node_cpus_available`: Available CPUs on node
 - `pbs_node_cpus_used`: Used CPUs on node
@@ -74,7 +69,7 @@ Entry point that orchestrates all components:
 
 ### Node Count Metrics
 - `pbs_node_count_free`: Number of nodes in free state
-- `pbs_node_count_busy`: Number of nodes in busy state
+- `pbs_node_count_busy`: Number of nodes in job-busy state
 - `pbs_node_count_offline`: Number of nodes in offline state
 - `pbs_node_count_down`: Number of nodes in down state
 
@@ -90,11 +85,11 @@ Entry point that orchestrates all components:
    ./pbs-exporter
    ```
 
-3. Access metrics at `http://localhost:8888/metrics`
+3. Access metrics at `http://localhost:8889/metrics`
 
 ## Configuration
 
-The application runs on port 8888 by default and updates metrics every 60 seconds. These values can be modified in the `main.go` file.
+The application runs on port 8889 by default and updates metrics every 60 seconds. These values can be modified in the `main.go` file.
 
 ## Dependencies
 
