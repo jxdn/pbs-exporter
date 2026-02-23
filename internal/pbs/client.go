@@ -552,10 +552,10 @@ func (c *Client) ParsePbsnodesOutput(output string) *NodeData {
 			}
 
 			// Parse state and count
-			// Normalize state: <various> -> busy
+			// Normalize state: <various> -> job-busy
 			normalizedState := state
 			if state == "<various>" {
-				normalizedState = "busy"
+				normalizedState = "job-busy"
 			}
 
 			switch normalizedState {
