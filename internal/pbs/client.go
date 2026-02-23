@@ -546,13 +546,16 @@ func (c *Client) ParsePbsnodesOutput(output string) *NodeData {
 				jobs = j
 			}
 
+			// Skip nodes with state-unknown (node not reachable)
+			if state == "state-unknown" {
+				continue
+			}
+
 			// Parse state and count
-			// Normalize state: <various> -> busy, state-unknown -> offline
+			// Normalize state: <various> -> busy
 			normalizedState := state
 			if state == "<various>" {
 				normalizedState = "busy"
-			} else if state == "state-unknown" {
-				normalizedState = "offline"
 			}
 
 			switch normalizedState {
