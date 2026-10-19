@@ -2,6 +2,7 @@ package pbs
 
 import (
 	"bufio"
+	"encoding/json"
 	"log"
 	"os/exec"
 	"regexp"
@@ -61,6 +62,17 @@ func (c *Client) GetQstatBfOutput() (string, error) {
 	return string(output), nil
 }
 
+// GetQstatJobsJSON executes qstat -f -F json -t and returns the output
+func (c *Client) GetQstatJobsJSON() (string, error) {
+	cmd := exec.Command("qstat", "-f", "-F", "json", "-t")
+	output, err := cmd.Output()
+	if err != nil {
+		log.Printf("Error running qstat -f -F json -t: %v", err)
+		return "", err
+	}
+	return string(output), nil
+}
+
 func (c *Client) GetPbsVersion() string {
 	cmd := exec.Command("qstat", "--version")
 	output, err := cmd.CombinedOutput()
@@ -115,6 +127,17 @@ type NodeInfo struct {
 	GPUsTotal       int
 	MemoryAvailable float64
 	MemoryTotal     float64
+}
+
+// JobDetail represents a single running job from qstat -f -F json
+type JobDetail struct {
+	JobID             string
+	User              string
+	Queue             string
+	Name              string
+	Nodes             map[string]int // node name -> GPUs allocated on that node
+	WalltimeUsed      int            // seconds
+	WalltimeRequested int            // seconds
 }
 
 // QueueInfo represents information about a single queue
@@ -226,6 +249,70 @@ func (c *Client) ParseQstatOutput(output string) *JobData {
 	}
 
 	return data
+}
+
+// ParseQstatJobsJSON parses `qstat -f -F json` output and returns running jobs
+func (c *Client) ParseQstatJobsJSON(output string) []JobDetail {
+	var parsed struct {
+		Jobs map[string]struct {
+			JobName       string `json:"Job_Name"`
+			JobOwner      string `json:"Job_Owner"`
+			JobState      string `json:"job_state"`
+			Queue         string `json:"queue"`
+			ExecVnode     string `json:"exec_vnode"`
+			ResourcesUsed struct {
+				Walltime string `json:"walltime"`
+			} `json:"resources_used"`
+			ResourceList struct {
+				Walltime string `json:"walltime"`
+			} `json:"Resource_List"`
+		} `json:"Jobs"`
+	}
+	if err := json.Unmarshal([]byte(output), &parsed); err != nil {
+		log.Printf("Error parsing qstat JSON output: %v", err)
+		return nil
+	}
+
+	var jobs []JobDetail
+	for jobID, j := range parsed.Jobs {
+		if j.JobState != "R" {
+			continue
+		}
+		user, _, _ := strings.Cut(j.JobOwner, "@")
+		jobs = append(jobs, JobDetail{
+			JobID:             jobID,
+			User:              user,
+			Queue:             j.Queue,
+			Name:              j.JobName,
+			Nodes:             parseExecVnodeGPUs(j.ExecVnode),
+			WalltimeUsed:      parseWalltimeToSeconds(j.ResourcesUsed.Walltime),
+			WalltimeRequested: parseWalltimeToSeconds(j.ResourceList.Walltime),
+		})
+	}
+	return jobs
+}
+
+// parseExecVnodeGPUs parses exec_vnode like "(hopper-04:ngpus=1:ncpus=12)+(hopper-05:ncpus=4)"
+// and returns GPUs per node (nodes without ngpus map to 0)
+func parseExecVnodeGPUs(execVnode string) map[string]int {
+	nodes := make(map[string]int)
+	for _, chunk := range strings.Split(execVnode, "+") {
+		chunk = strings.Trim(strings.TrimSpace(chunk), "()")
+		if chunk == "" {
+			continue
+		}
+		parts := strings.Split(chunk, ":")
+		node := parts[0]
+		nodes[node] += 0
+		for _, kv := range parts[1:] {
+			if v, ok := strings.CutPrefix(kv, "ngpus="); ok {
+				if n, err := strconv.Atoi(v); err == nil {
+					nodes[node] += n
+				}
+			}
+		}
+	}
+	return nodes
 }
 
 // ParseQstatQSummary parses `qstat -q` output and returns totals for running and queued jobs

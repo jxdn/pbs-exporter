@@ -1,0 +1,65 @@
+# Idle GPU job detection.
+#
+# Joins pbs-exporter job metrics (pbs_job_*) with the per-GPU process metric
+# gpu_process_count{exported_job="<PBS job id>"} and DCGM_FI_DEV_GPU_UTIL.
+# A running job is idle when it holds GPUs, has run for over 30 minutes, and
+# either none of its GPUs has a process or its GPUs averaged <1% util over 30m.
+# Only nodes that report gpu_process_count are checked.
+groups:
+  - name: pbs_idle_gpu_jobs
+    rules:
+      # 1 per GPU that has a process, labelled with the owning PBS job
+      - record: pbs:gpu_job_owner
+        expr: |
+          max by (node, gpu, job_id) (
+            label_replace(label_replace(
+              gpu_process_count{exported_job!="none"} > 0,
+              "node", "$1", "instance", "([^:]+):.*"),
+              "job_id", "$1", "exported_job", "(.+)")
+          ) * 0 + 1
+
+      # nodes where the GPU process exporter runs
+      - record: pbs:gpu_process_exporter_node
+        expr: |
+          count by (node) (
+            label_replace(gpu_process_count, "node", "$1", "instance", "([^:]+):.*")
+          )
+
+      # GPUs per job that have at least one process
+      - record: pbs:job_gpus_active
+        expr: count by (job_id, node) (pbs:gpu_job_owner)
+
+      # average GPU util over 30m across the job's GPUs that have a process
+      - record: pbs:job_gpu_util_avg30m
+        expr: |
+          avg by (job_id, node) (
+            pbs:gpu_job_owner
+            * on (node, gpu) group_left
+            max by (node, gpu) (
+              label_replace(avg_over_time(DCGM_FI_DEV_GPU_UTIL[30m]),
+                "node", "$1", "instance", "([^:]+):.*")
+            )
+          )
+
+      # idle jobs; value = GPUs held on the node
+      - record: pbs:job_gpu_idle
+        expr: |
+          (
+            (
+              (pbs_job_gpus > 0 unless on (job_id, node) pbs:job_gpus_active)
+              or
+              (pbs_job_gpus > 0 and on (job_id, node) (pbs:job_gpu_util_avg30m < 1))
+            )
+            and on (node) pbs:gpu_process_exporter_node
+            and on (job_id) (pbs_job_walltime_used_seconds > 1800)
+          )
+          * on (job_id, node) group_left (user, queue, job_name) pbs_job_info
+
+      - alert: PBSJobGPUIdle
+        expr: pbs:job_gpu_idle
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: "{{ $labels.user }} job {{ $labels.job_name }} ({{ $labels.job_id }}) is idle on {{ $labels.node }}"
+          description: "Holds {{ $value }} GPU(s) with no GPU process or <1% GPU util for 30m+."

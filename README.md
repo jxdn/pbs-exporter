@@ -54,6 +54,12 @@ Entry point that orchestrates all components:
 - `qstat_total_all_jobs`: Total number of all jobs
 - `qstat_jobs_by_status`: Number of jobs by status
 
+### Per-Job Metrics (running jobs, from `qstat -f -F json -t`)
+- `pbs_job_info{job_id,user,queue,job_name,node}`: Always 1, one series per job per node (full job name)
+- `pbs_job_gpus{job_id,node}`: GPUs allocated to the job on that node
+- `pbs_job_walltime_used_seconds{job_id}`: Walltime used
+- `pbs_job_walltime_requested_seconds{job_id}`: Walltime requested
+
 ### Node Metrics
 - `pbs_node_state`: Node state (1=free, 2=job-busy, 3=offline, 4=down)
 - `pbs_node_jobs`: Number of jobs on node
@@ -72,6 +78,14 @@ Entry point that orchestrates all components:
 - `pbs_node_count_busy`: Number of nodes in job-busy state
 - `pbs_node_count_offline`: Number of nodes in offline state
 - `pbs_node_count_down`: Number of nodes in down state
+
+## Idle GPU Jobs
+
+[`prometheus/idle_gpu_jobs.rules.yml`](prometheus/idle_gpu_jobs.rules.yml) finds running jobs that hold GPUs but don't use them. It joins `pbs_job_*` with the per-GPU `gpu_process_count{exported_job="<job id>"}` metric from the compute nodes and with `DCGM_FI_DEV_GPU_UTIL`. A job is idle when it has run for over 30 minutes and either none of its GPUs has a process or its GPUs averaged under 1% util over 30 minutes.
+
+Add the file to `rule_files` in `prometheus.yml`. For a Grafana table, use the instant query `pbs:job_gpu_idle` with Format = Table. Its columns are user, job_name, job_id, node and value (GPUs held). The `PBSJobGPUIdle` alert fires after a job has been idle for 30 more minutes.
+
+Only nodes that report `gpu_process_count` are checked. PBS records which node a job runs on and how many GPUs it has, but not which GPU, so the link from GPU to job comes from `exported_job`.
 
 ## Usage
 

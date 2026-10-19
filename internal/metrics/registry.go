@@ -19,6 +19,11 @@ type Registry struct {
 	TotalAllJobs       prometheus.Gauge
 	JobsByStatus       *prometheus.GaugeVec
 
+	JobInfo              *prometheus.GaugeVec
+	JobGpus              *prometheus.GaugeVec
+	JobWalltimeUsed      *prometheus.GaugeVec
+	JobWalltimeRequested *prometheus.GaugeVec
+
 	NodeState           *prometheus.GaugeVec
 	NodeJobs            *prometheus.GaugeVec
 	NodeCpusAvailable   *prometheus.GaugeVec
@@ -176,6 +181,38 @@ func NewRegistry() *Registry {
 				Help: "Number of jobs by status",
 			},
 			[]string{"status"},
+		),
+
+		JobInfo: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_job_info",
+				Help: "Running job information per node (always 1)",
+			},
+			[]string{"job_id", "user", "queue", "job_name", "node"},
+		),
+
+		JobGpus: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_job_gpus",
+				Help: "GPUs allocated to a running job on a node",
+			},
+			[]string{"job_id", "node"},
+		),
+
+		JobWalltimeUsed: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_job_walltime_used_seconds",
+				Help: "Walltime used by a running job in seconds",
+			},
+			[]string{"job_id"},
+		),
+
+		JobWalltimeRequested: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_job_walltime_requested_seconds",
+				Help: "Walltime requested by a running job in seconds",
+			},
+			[]string{"job_id"},
 		),
 
 		NodeState: prometheus.NewGaugeVec(
@@ -585,6 +622,10 @@ func (r *Registry) registerMetrics() {
 		r.TotalBJobs,
 		r.TotalAllJobs,
 		r.JobsByStatus,
+		r.JobInfo,
+		r.JobGpus,
+		r.JobWalltimeUsed,
+		r.JobWalltimeRequested,
 		r.NodeState,
 		r.NodeJobs,
 		r.NodeCpusAvailable,
@@ -650,6 +691,13 @@ func (r *Registry) ResetJobMetrics() {
 	r.RunningJobsByQueue.Reset()
 	r.JobsInQueue.Reset()
 	r.JobsByStatus.Reset()
+}
+
+func (r *Registry) ResetJobDetailMetrics() {
+	r.JobInfo.Reset()
+	r.JobGpus.Reset()
+	r.JobWalltimeUsed.Reset()
+	r.JobWalltimeRequested.Reset()
 }
 
 func (r *Registry) ResetNodeMetrics() {

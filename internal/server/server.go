@@ -19,6 +19,7 @@ func New(registry *metrics.Registry, pbsClient *pbs.Client) *Server {
 
 func (s *Server) UpdateMetrics() {
 	s.updateJobMetrics()
+	s.updateJobDetailMetrics()
 	s.updateNodeMetrics()
 	s.updateQueueMetrics()
 	s.updateServerMetrics()
@@ -40,6 +41,24 @@ func (s *Server) updateJobMetrics() {
 
 	jobData := s.pbsClient.ParseQstatOutput(output)
 	s.updateJobMetricsFromData(jobData)
+}
+
+func (s *Server) updateJobDetailMetrics() {
+	s.registry.ResetJobDetailMetrics()
+
+	output, err := s.pbsClient.GetQstatJobsJSON()
+	if err != nil {
+		return
+	}
+
+	for _, job := range s.pbsClient.ParseQstatJobsJSON(output) {
+		for node, gpus := range job.Nodes {
+			s.registry.JobInfo.WithLabelValues(job.JobID, job.User, job.Queue, job.Name, node).Set(1)
+			s.registry.JobGpus.WithLabelValues(job.JobID, node).Set(float64(gpus))
+		}
+		s.registry.JobWalltimeUsed.WithLabelValues(job.JobID).Set(float64(job.WalltimeUsed))
+		s.registry.JobWalltimeRequested.WithLabelValues(job.JobID).Set(float64(job.WalltimeRequested))
+	}
 }
 
 func (s *Server) updateNodeMetrics() {
