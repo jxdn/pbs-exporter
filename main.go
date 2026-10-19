@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"net/http"
 	"time"
@@ -13,6 +14,9 @@ import (
 )
 
 func main() {
+	listen := flag.String("listen", "0.0.0.0:8888", "Address to serve metrics on")
+	flag.Parse()
+
 	// Initialize metrics registry
 	registry := metrics.NewRegistry()
 
@@ -37,7 +41,7 @@ func main() {
 	}()
 
 	// Start HTTP server
-	log.Println("PBS cluster monitoring server starting on 0.0.0.0:8888")
-	log.Println("Metrics available at http://0.0.0.0:8888/metrics")
-	log.Fatal(http.ListenAndServe("0.0.0.0:8888", promhttp.HandlerFor(registry.GetRegistry(), promhttp.HandlerOpts{})))
+	log.Printf("PBS cluster monitoring server starting on %s", *listen)
+	log.Printf("Metrics available at http://%s/metrics", *listen)
+	log.Fatal(http.ListenAndServe(*listen, promhttp.HandlerFor(registry.GetRegistry(), promhttp.HandlerOpts{})))
 }

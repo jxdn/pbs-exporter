@@ -1,0 +1,23 @@
+# User-level dev instance, runs alongside the production exporter on :8888.
+# Install (as a normal user, needs `loginctl enable-linger` to survive logout):
+#   mkdir -p ~/pbs-exporter-dev ~/.config/systemd/user
+#   cp pbs-exporter ~/pbs-exporter-dev/
+#   cp deploy/pbs-exporter-dev.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now pbs-exporter-dev
+[Unit]
+Description=PBS Exporter dev (v2 branch, Prometheus metrics on :8889)
+After=network.target
+
+[Service]
+Environment="PATH=/usr/local/bin:/usr/bin:/bin:/cm/shared/apps/pbspro/current/bin"
+Environment="PBS_CONF_FILE=/cm/local/apps/pbspro/var/etc/pbs.conf"
+Type=simple
+WorkingDirectory=%h/pbs-exporter-dev
+ExecStart=%h/pbs-exporter-dev/pbs-exporter -listen 0.0.0.0:8889
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:%h/pbs-exporter-dev/pbs-exporter.log
+StandardError=append:%h/pbs-exporter-dev/pbs-exporter.log
+
+[Install]
+WantedBy=default.target
