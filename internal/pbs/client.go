@@ -2,29 +2,51 @@ package pbs
 
 import (
 	"bufio"
+	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
 // Client handles PBS command execution and data parsing
-type Client struct{}
+type Client struct {
+	// Timeout bounds each PBS command so a stalled PBS server cannot block updates forever
+	Timeout time.Duration
+}
 
 // NewClient creates a new PBS client
 func NewClient() *Client {
-	return &Client{}
+	return &Client{Timeout: 45 * time.Second}
 }
 
-// GetQstatOutput executes qstat -t and returns the output
-func (c *Client) GetQstatOutput() (string, error) {
-	cmd := exec.Command("qstat", "-t")
-	output, err := cmd.CombinedOutput()
+var versionRe = regexp.MustCompile(`\d{4}\.\d+\.\d+`)
+
+// run executes a PBS command with c.Timeout and returns its stdout
+func (c *Client) run(name string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), c.Timeout)
+	defer cancel()
+
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Stderr = &stderr
+	// On timeout kill the whole process group (children too), and stop waiting for
+	// output pipes a leftover child might still hold open
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = 5 * time.Second
+	output, err := cmd.Output()
+	if ctx.Err() == context.DeadlineExceeded {
+		err = fmt.Errorf("timed out after %s", c.Timeout)
+	}
 	if err != nil {
-		log.Printf("Error running qstat -t: %v", err)
+		log.Printf("Error running %s %s: %v %s", name, strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 		return "", err
 	}
 	return string(output), nil
@@ -32,64 +54,22 @@ func (c *Client) GetQstatOutput() (string, error) {
 
 // GetPbsnodesOutput executes pbsnodes -aSj and returns the output
 func (c *Client) GetPbsnodesOutput() (string, error) {
-	cmd := exec.Command("pbsnodes", "-aSj")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Printf("Error running pbsnodes -aSj: %v", err)
-		return "", err
-	}
-	return string(output), nil
+	return c.run("pbsnodes", "-aSj")
 }
 
 // GetQstatQOutput executes qstat -q and returns the output
 func (c *Client) GetQstatQOutput() (string, error) {
-	cmd := exec.Command("qstat", "-q")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Printf("Error running qstat -q: %v", err)
-		return "", err
-	}
-	return string(output), nil
+	return c.run("qstat", "-q")
 }
 
 // GetQstatBfOutput executes qstat -Bf and returns the output
 func (c *Client) GetQstatBfOutput() (string, error) {
-	cmd := exec.Command("qstat", "-Bf")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Printf("Error running qstat -Bf: %v", err)
-		return "", err
-	}
-	return string(output), nil
+	return c.run("qstat", "-Bf")
 }
 
 // GetQstatJobsJSON executes qstat -f -F json -t and returns the output
 func (c *Client) GetQstatJobsJSON() (string, error) {
-	cmd := exec.Command("qstat", "-f", "-F", "json", "-t")
-	output, err := cmd.Output()
-	if err != nil {
-		log.Printf("Error running qstat -f -F json -t: %v", err)
-		return "", err
-	}
-	return string(output), nil
-}
-
-func (c *Client) GetPbsVersion() string {
-	cmd := exec.Command("qstat", "--version")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		cmd = exec.Command("pbsnodes", "--version")
-		output, err = cmd.CombinedOutput()
-		if err != nil {
-			return "unknown"
-		}
-	}
-	re := regexp.MustCompile(`\d{4}\.\d+\.\d+`)
-	version := re.FindString(string(output))
-	if version != "" {
-		return version
-	}
-	return "unknown"
+	return c.run("qstat", "-f", "-F", "json", "-t")
 }
 
 // JobData represents parsed job information
@@ -130,10 +110,10 @@ type NodeInfo struct {
 	MemoryTotal     float64
 }
 
-// JobDetail represents a single running, queued or held job from qstat -f -F json
+// JobDetail represents a single job from qstat -f -F json
 type JobDetail struct {
 	JobID             string
-	State             string // R, Q or H
+	State             string // PBS job state: R, Q, H, F, E, B, ...
 	User              string
 	Queue             string
 	Project           string
@@ -179,8 +159,8 @@ type ServerData struct {
 	JobHistoryDuration int
 }
 
-// ParseQstatOutput parses qstat output and returns structured job data
-func (c *Client) ParseQstatOutput(output string) *JobData {
+// BuildJobData counts jobs by user, queue and state (the qstat_* job metrics)
+func BuildJobData(jobs []JobDetail) *JobData {
 	data := &JobData{
 		UserJobCount:     make(map[string]int),
 		QueuedJobsByUser: make(map[string]int),
@@ -189,78 +169,40 @@ func (c *Client) ParseQstatOutput(output string) *JobData {
 		StatusCount:      make(map[string]int),
 	}
 
-	scanner := bufio.NewScanner(strings.NewReader(output))
-	lineCount := 0
+	for _, job := range jobs {
+		data.StatusCount[mapStatusToDescription(job.State)]++
+		data.QueueTotalCount[job.Queue]++
 
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		lineCount++
-
-		// Skip header lines
-		if lineCount <= 2 || line == "" {
-			continue
-		}
-
-		// Skip separator line
-		if strings.Contains(line, "----") {
-			continue
-		}
-
-		// Parse job line
-		fields := strings.Fields(line)
-		if len(fields) >= 6 {
-			user := fields[2]
-			status := fields[4]
-			queue := fields[5]
-
-			// Map status to descriptive name
-			statusDesc := mapStatusToDescription(status)
-
-			// Count by descriptive status
-			data.StatusCount[statusDesc]++
-
-			// Count total jobs in each queue
-			data.QueueTotalCount[queue]++
-
-			// Count totals by original status code
-			data.TotalAll++
-			switch status {
-			case "R":
-				data.TotalR++
-			case "H":
-				data.TotalH++
-			case "F":
-				data.TotalF++
-			case "Q":
-				data.TotalQ++
-			case "E":
-				data.TotalE++
-			case "B":
-				data.TotalB++
-			}
-
-			// Count running jobs by user and queue (check for original "R" status)
-			if status == "R" {
-				data.UserJobCount[user]++
-				data.QueueJobCount[queue]++
-				data.TotalRunning++
-			}
-
-			// Count queued jobs by user (check for original "Q" status)
-			if status == "Q" {
-				data.QueuedJobsByUser[user]++
-			}
+		data.TotalAll++
+		switch job.State {
+		case "R":
+			data.TotalR++
+			data.UserJobCount[job.User]++
+			data.QueueJobCount[job.Queue]++
+			data.TotalRunning++
+		case "H":
+			data.TotalH++
+		case "F":
+			data.TotalF++
+		case "Q":
+			data.TotalQ++
+			data.QueuedJobsByUser[job.User]++
+		case "E":
+			data.TotalE++
+		case "B":
+			data.TotalB++
 		}
 	}
 
 	return data
 }
 
-// ParseQstatJobsJSON parses `qstat -f -F json` output and returns running (R),
-// queued (Q) and held (H) jobs
-func (c *Client) ParseQstatJobsJSON(output string) []JobDetail {
+// ParseQstatJobsJSON parses `qstat -f -F json` output and returns every job
+// (any state) plus the PBS version (e.g. 2024.1.0, or "unknown")
+func (c *Client) ParseQstatJobsJSON(output string) ([]JobDetail, string, error) {
 	var parsed struct {
-		Jobs map[string]struct {
+		PbsVersion string `json:"pbs_version"`
+		Jobs       map[string]struct {
 			JobName       string          `json:"Job_Name"`
 			JobOwner      string          `json:"Job_Owner"`
 			JobState      string          `json:"job_state"`
@@ -279,14 +221,16 @@ func (c *Client) ParseQstatJobsJSON(output string) []JobDetail {
 	}
 	if err := json.Unmarshal([]byte(output), &parsed); err != nil {
 		log.Printf("Error parsing qstat JSON output: %v", err)
-		return nil
+		return nil, "", err
 	}
 
-	var jobs []JobDetail
+	version := versionRe.FindString(parsed.PbsVersion)
+	if version == "" {
+		version = "unknown"
+	}
+
+	jobs := make([]JobDetail, 0, len(parsed.Jobs))
 	for jobID, j := range parsed.Jobs {
-		if j.JobState != "R" && j.JobState != "Q" && j.JobState != "H" {
-			continue
-		}
 		user, _, _ := strings.Cut(j.JobOwner, "@")
 		project := j.Project
 		if project == "" {
@@ -309,7 +253,7 @@ func (c *Client) ParseQstatJobsJSON(output string) []JobDetail {
 		}
 		jobs = append(jobs, job)
 	}
-	return jobs
+	return jobs, version, nil
 }
 
 // rawString returns a JSON value as text, whether it was a JSON string or number

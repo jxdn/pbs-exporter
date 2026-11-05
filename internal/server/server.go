@@ -19,88 +19,101 @@ func New(registry *metrics.Registry, pbsClient *pbs.Client) *Server {
 	}
 }
 
+// UpdateMetrics refreshes all metrics. Each section runs its PBS command and parses
+// the result before touching any metric, so scrapes never see a half-empty set, and
+// a failed command keeps the last good values (pbs_exporter_command_success shows it).
 func (s *Server) UpdateMetrics() {
 	s.updateJobMetrics()
-	s.updateJobDetailMetrics()
 	s.updateNodeMetrics()
 	s.updateQueueMetrics()
 	s.updateServerMetrics()
-	s.updateVersionMetric()
 }
 
-func (s *Server) updateVersionMetric() {
-	version := s.pbsClient.GetPbsVersion()
-	s.registry.PBSVersion.WithLabelValues(version).Set(1)
+// timed runs a PBS command and records how long it took
+func (s *Server) timed(command string, get func() (string, error)) (string, error) {
+	start := time.Now()
+	output, err := get()
+	s.registry.ExporterCommandDuration.WithLabelValues(command).Set(time.Since(start).Seconds())
+	return output, err
+}
+
+// record sets the health metrics for a command and reports whether it succeeded
+func (s *Server) record(command string, err error) bool {
+	if err != nil {
+		s.registry.ExporterCommandSuccess.WithLabelValues(command).Set(0)
+		return false
+	}
+	s.registry.ExporterCommandSuccess.WithLabelValues(command).Set(1)
+	s.registry.ExporterLastSuccess.WithLabelValues(command).SetToCurrentTime()
+	return true
 }
 
 func (s *Server) updateJobMetrics() {
+	output, err := s.timed("qstat_json", s.pbsClient.GetQstatJobsJSON)
+	var jobs []pbs.JobDetail
+	var version string
+	if err == nil {
+		jobs, version, err = s.pbsClient.ParseQstatJobsJSON(output)
+	}
+	if !s.record("qstat_json", err) {
+		return
+	}
+
 	s.registry.ResetJobMetrics()
-
-	output, err := s.pbsClient.GetQstatOutput()
-	if err != nil {
-		return
-	}
-
-	jobData := s.pbsClient.ParseQstatOutput(output)
-	s.updateJobMetricsFromData(jobData)
-}
-
-func (s *Server) updateJobDetailMetrics() {
 	s.registry.ResetJobDetailMetrics()
+	s.registry.PBSVersion.Reset()
 
-	output, err := s.pbsClient.GetQstatJobsJSON()
-	if err != nil {
-		return
-	}
+	s.registry.PBSVersion.WithLabelValues(version).Set(1)
+	s.updateJobMetricsFromData(pbs.BuildJobData(jobs))
 
 	now := time.Now()
-	for _, job := range s.pbsClient.ParseQstatJobsJSON(output) {
-		s.registry.ProjectJobs.WithLabelValues(job.Project, job.State).Inc()
-
-		if job.State != "R" {
+	for _, job := range jobs {
+		switch job.State {
+		case "R":
+			for node, gpus := range job.Nodes {
+				s.registry.JobInfo.WithLabelValues(job.JobID, job.User, job.Queue, job.Project, job.Name, node).Set(1)
+				s.registry.JobGpus.WithLabelValues(job.JobID, node).Set(float64(gpus))
+				s.registry.ProjectGpus.WithLabelValues(job.Project, job.State).Add(float64(gpus))
+			}
+			s.registry.JobWalltimeUsed.WithLabelValues(job.JobID).Set(float64(job.WalltimeUsed))
+			s.registry.JobWalltimeRequested.WithLabelValues(job.JobID).Set(float64(job.WalltimeRequested))
+		case "Q", "H":
 			s.registry.JobQueuedInfo.WithLabelValues(job.JobID, job.User, job.Queue, job.Project, job.Name, job.State).Set(1)
 			if !job.QueuedAt.IsZero() {
 				s.registry.JobQueuedSeconds.WithLabelValues(job.JobID).Set(now.Sub(job.QueuedAt).Seconds())
 			}
 			s.registry.ProjectGpus.WithLabelValues(job.Project, job.State).Add(float64(job.GPUsRequested))
+		default:
 			continue
 		}
-
-		for node, gpus := range job.Nodes {
-			s.registry.JobInfo.WithLabelValues(job.JobID, job.User, job.Queue, job.Project, job.Name, node).Set(1)
-			s.registry.JobGpus.WithLabelValues(job.JobID, node).Set(float64(gpus))
-			s.registry.ProjectGpus.WithLabelValues(job.Project, job.State).Add(float64(gpus))
-		}
-		s.registry.JobWalltimeUsed.WithLabelValues(job.JobID).Set(float64(job.WalltimeUsed))
-		s.registry.JobWalltimeRequested.WithLabelValues(job.JobID).Set(float64(job.WalltimeRequested))
+		s.registry.ProjectJobs.WithLabelValues(job.Project, job.State).Inc()
 	}
 }
 
 func (s *Server) updateNodeMetrics() {
-	s.registry.ResetNodeMetrics()
-
-	output, err := s.pbsClient.GetPbsnodesOutput()
-	if err != nil {
+	output, err := s.timed("pbsnodes", s.pbsClient.GetPbsnodesOutput)
+	if !s.record("pbsnodes", err) {
 		return
 	}
 
 	nodeData := s.pbsClient.ParsePbsnodesOutput(output)
+	s.registry.ResetNodeMetrics()
 	s.updateNodeMetricsFromData(nodeData)
 }
 
 func (s *Server) updateQueueMetrics() {
-	s.registry.ResetQueueMetrics()
-
-	output, err := s.pbsClient.GetQstatQOutput()
-	if err != nil {
+	output, err := s.timed("qstat_q", s.pbsClient.GetQstatQOutput)
+	if !s.record("qstat_q", err) {
 		return
 	}
+
+	queueData := s.pbsClient.ParseQstatQFull(output)
+	s.registry.ResetQueueMetrics()
 
 	running, queued := s.pbsClient.ParseQstatQSummary(output)
 	s.registry.QueueSummaryRunning.Set(float64(running))
 	s.registry.QueueSummaryQueued.Set(float64(queued))
 
-	queueData := s.pbsClient.ParseQstatQFull(output)
 	for queueName, queueInfo := range queueData.Queues {
 		if queueInfo.Enabled {
 			s.registry.QueueEnabled.WithLabelValues(queueName).Set(1)
@@ -125,8 +138,8 @@ func (s *Server) updateQueueMetrics() {
 }
 
 func (s *Server) updateServerMetrics() {
-	output, err := s.pbsClient.GetQstatBfOutput()
-	if err != nil {
+	output, err := s.timed("qstat_bf", s.pbsClient.GetQstatBfOutput)
+	if !s.record("qstat_bf", err) {
 		return
 	}
 

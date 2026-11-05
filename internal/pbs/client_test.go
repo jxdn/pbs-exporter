@@ -71,7 +71,13 @@ const qstatJobsJSON = `{
 }`
 
 func TestParseQstatJobsJSON(t *testing.T) {
-	jobs := NewClient().ParseQstatJobsJSON(qstatJobsJSON)
+	jobs, version, err := NewClient().ParseQstatJobsJSON(qstatJobsJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version != "2024.1.0" {
+		t.Errorf("version = %q, want 2024.1.0", version)
+	}
 
 	byID := make(map[string]JobDetail)
 	queuedAt := make(map[string]time.Time)
@@ -100,6 +106,9 @@ func TestParseQstatJobsJSON(t *testing.T) {
 			JobID: "675119.hopper-m-02", State: "Q", User: "carol", Queue: "small", Project: "none", Name: "queued_eval",
 			GPUsRequested: 2, WalltimeRequested: 4 * 3600,
 		},
+		"675001.hopper-m-02": {
+			JobID: "675001.hopper-m-02", State: "F", User: "dave", Queue: "small", Project: "cfp-1234", Name: "done",
+		},
 		"675300[1].hopper-m-02": {
 			JobID: "675300[1].hopper-m-02", State: "R", User: "bob", Queue: "small", Project: "_pbs_project_default", Name: "sweep",
 			Nodes:        map[string]int{"hopper-20": 0},
@@ -116,6 +125,7 @@ func TestParseQstatJobsJSON(t *testing.T) {
 		"675118.hopper-m-02":    time.Date(2026, 10, 2, 11, 6, 24, 0, time.Local),
 		"675119.hopper-m-02":    time.Unix(1792374000, 0),
 		"675200.hopper-m-02":    {},
+		"675001.hopper-m-02":    {},
 		"675300[1].hopper-m-02": {},
 	}
 	for id, w := range wantQueuedAt {
@@ -126,8 +136,28 @@ func TestParseQstatJobsJSON(t *testing.T) {
 }
 
 func TestParseQstatJobsJSONInvalid(t *testing.T) {
-	if jobs := NewClient().ParseQstatJobsJSON("qstat: not json"); jobs != nil {
-		t.Errorf("expected nil for invalid JSON, got %+v", jobs)
+	if jobs, _, err := NewClient().ParseQstatJobsJSON("qstat: not json"); err == nil || jobs != nil {
+		t.Errorf("expected error and no jobs for invalid JSON, got %+v, %v", jobs, err)
+	}
+}
+
+func TestBuildJobData(t *testing.T) {
+	jobs, _, err := NewClient().ParseQstatJobsJSON(qstatJobsJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := BuildJobData(jobs)
+	want := &JobData{
+		UserJobCount:     map[string]int{"libobo": 1, "alice": 1, "bob": 1},
+		QueuedJobsByUser: map[string]int{"carol": 1},
+		QueueJobCount:    map[string]int{"small": 2, "large": 1},
+		QueueTotalCount:  map[string]int{"small": 4, "large": 1, "interactive": 1},
+		StatusCount:      map[string]int{"Running": 3, "Hold": 1, "Queuing": 1, "Finished": 1},
+		TotalR:           3, TotalH: 1, TotalF: 1, TotalQ: 1,
+		TotalAll: 6, TotalRunning: 3,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("BuildJobData mismatch\n got: %+v\nwant: %+v", got, want)
 	}
 }
 
@@ -142,7 +172,11 @@ func TestParseQstatJobsJSONFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	jobs := NewClient().ParseQstatJobsJSON(string(data))
+	jobs, version, err := NewClient().ParseQstatJobsJSON(string(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("pbs version %s", version)
 	if len(jobs) == 0 {
 		t.Fatal("no running jobs parsed")
 	}

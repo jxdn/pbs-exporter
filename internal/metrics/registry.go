@@ -28,6 +28,10 @@ type Registry struct {
 	ProjectJobs          *prometheus.GaugeVec
 	ProjectGpus          *prometheus.GaugeVec
 
+	ExporterCommandSuccess  *prometheus.GaugeVec
+	ExporterCommandDuration *prometheus.GaugeVec
+	ExporterLastSuccess     *prometheus.GaugeVec
+
 	NodeState           *prometheus.GaugeVec
 	NodeJobs            *prometheus.GaugeVec
 	NodeCpusAvailable   *prometheus.GaugeVec
@@ -225,6 +229,30 @@ func NewRegistry() *Registry {
 				Help: "GPUs per project and state: allocated for R, requested for Q and H",
 			},
 			[]string{"project", "state"},
+		),
+
+		ExporterCommandSuccess: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_exporter_command_success",
+				Help: "1 if the last run of this PBS command succeeded (and parsed), 0 if not",
+			},
+			[]string{"command"},
+		),
+
+		ExporterCommandDuration: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_exporter_command_duration_seconds",
+				Help: "How long the last run of this PBS command took",
+			},
+			[]string{"command"},
+		),
+
+		ExporterLastSuccess: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_exporter_last_success_timestamp_seconds",
+				Help: "Unix time of the last successful run of this PBS command",
+			},
+			[]string{"command"},
 		),
 
 		JobGpus: prometheus.NewGaugeVec(
@@ -666,6 +694,9 @@ func (r *Registry) registerMetrics() {
 		r.JobQueuedSeconds,
 		r.ProjectJobs,
 		r.ProjectGpus,
+		r.ExporterCommandSuccess,
+		r.ExporterCommandDuration,
+		r.ExporterLastSuccess,
 		r.NodeState,
 		r.NodeJobs,
 		r.NodeCpusAvailable,

@@ -15,6 +15,8 @@ import (
 
 func main() {
 	listen := flag.String("listen", "0.0.0.0:8888", "Address to serve metrics on")
+	interval := flag.Duration("interval", 60*time.Second, "How often to query PBS")
+	commandTimeout := flag.Duration("command-timeout", 45*time.Second, "Time limit for each PBS command")
 	flag.Parse()
 
 	// Initialize metrics registry
@@ -22,6 +24,7 @@ func main() {
 
 	// Initialize PBS client
 	pbsClient := pbs.NewClient()
+	pbsClient.Timeout = *commandTimeout
 
 	// Create and configure server
 	srv := server.New(registry, pbsClient)
@@ -31,7 +34,7 @@ func main() {
 		// Update immediately on start
 		srv.UpdateMetrics()
 
-		ticker := time.NewTicker(60 * time.Second)
+		ticker := time.NewTicker(*interval)
 		defer ticker.Stop()
 
 		for {

@@ -82,6 +82,14 @@ Per project (`project` is `none` when a job has no project):
 - `pbs_node_memory_used_gb`: Used memory on node in GB
 - `pbs_node_memory_total_gb`: Total memory on node in GB
 
+### Exporter Health Metrics
+Per PBS command (`command` = `qstat_json`, `pbsnodes`, `qstat_q`, `qstat_bf`):
+- `pbs_exporter_command_success{command}`: 1 if the last run succeeded, 0 if it failed or timed out
+- `pbs_exporter_command_duration_seconds{command}`: How long the last run took
+- `pbs_exporter_last_success_timestamp_seconds{command}`: Unix time of the last successful run
+
+Example alert: `time() - pbs_exporter_last_success_timestamp_seconds{command="qstat_json"} > 600` (no fresh job data for 10 minutes).
+
 ### Node Count Metrics
 - `pbs_node_count_free`: Number of nodes in free state
 - `pbs_node_count_busy`: Number of nodes in job-busy state
@@ -112,7 +120,13 @@ Only nodes that report `gpu_process_count` are checked. PBS records which node a
 
 ## Configuration
 
-The application runs on port 8888 by default and updates metrics every 60 seconds. These values can be modified in the `main.go` file.
+| Flag | Default | Meaning |
+|---|---|---|
+| `-listen` | `0.0.0.0:8888` | Address to serve metrics on |
+| `-interval` | `60s` | How often to query PBS |
+| `-command-timeout` | `45s` | Time limit for each PBS command; a stuck command is killed and retried next cycle |
+
+Each cycle runs 4 PBS commands: `qstat -f -F json -t`, `pbsnodes -aSj`, `qstat -q` and `qstat -Bf`. Metrics are only replaced after a command succeeds, so a failing or slow PBS server leaves the last good values in place instead of empty metrics. Watch `pbs_exporter_command_success` to catch that.
 
 ## Dependencies
 
