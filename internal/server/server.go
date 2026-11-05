@@ -102,39 +102,47 @@ func (s *Server) updateNodeMetrics() {
 }
 
 func (s *Server) updateQueueMetrics() {
-	output, err := s.timed("qstat_q", s.pbsClient.GetQstatQOutput)
-	if !s.record("qstat_q", err) {
+	output, err := s.timed("qstat_queues", s.pbsClient.GetQstatQueuesJSON)
+	var queues map[string]pbs.QueueInfo
+	if err == nil {
+		queues, err = s.pbsClient.ParseQstatQueuesJSON(output)
+	}
+	if !s.record("qstat_queues", err) {
 		return
 	}
 
-	queueData := s.pbsClient.ParseQstatQFull(output)
 	s.registry.ResetQueueMetrics()
 
-	running, queued := s.pbsClient.ParseQstatQSummary(output)
-	s.registry.QueueSummaryRunning.Set(float64(running))
-	s.registry.QueueSummaryQueued.Set(float64(queued))
+	var totalRunning, totalQueued int
+	for queueName, queueInfo := range queues {
+		running, queued := queueInfo.Jobs["Running"], queueInfo.Jobs["Queued"]
+		totalRunning += running
+		totalQueued += queued
 
-	for queueName, queueInfo := range queueData.Queues {
-		if queueInfo.Enabled {
-			s.registry.QueueEnabled.WithLabelValues(queueName).Set(1)
-		} else {
-			s.registry.QueueEnabled.WithLabelValues(queueName).Set(0)
+		s.registry.QueueInfo.WithLabelValues(queueName, queueInfo.Type).Set(1)
+		s.registry.QueueEnabled.WithLabelValues(queueName).Set(boolToFloat(queueInfo.Enabled))
+		s.registry.QueueStarted.WithLabelValues(queueName).Set(boolToFloat(queueInfo.Started))
+		s.registry.QueueRunningJobs.WithLabelValues(queueName).Set(float64(running))
+		s.registry.QueueQueuedJobs.WithLabelValues(queueName).Set(float64(queued))
+		s.registry.QueueQueuedByQueue.WithLabelValues(queueName).Set(float64(queued))
+		for state, count := range queueInfo.Jobs {
+			s.registry.QueueJobs.WithLabelValues(queueName, state).Set(float64(count))
 		}
-
-		if queueInfo.Started {
-			s.registry.QueueStarted.WithLabelValues(queueName).Set(1)
-		} else {
-			s.registry.QueueStarted.WithLabelValues(queueName).Set(0)
-		}
-
-		s.registry.QueueRunningJobs.WithLabelValues(queueName).Set(float64(queueInfo.Running))
-		s.registry.QueueQueuedJobs.WithLabelValues(queueName).Set(float64(queueInfo.Queued))
-		s.registry.QueueQueuedByQueue.WithLabelValues(queueName).Set(float64(queueInfo.Queued))
 
 		if queueInfo.Walltime > 0 {
 			s.registry.QueueWalltime.WithLabelValues(queueName).Set(float64(queueInfo.Walltime))
 		}
 	}
+
+	s.registry.QueueSummaryRunning.Set(float64(totalRunning))
+	s.registry.QueueSummaryQueued.Set(float64(totalQueued))
+}
+
+func boolToFloat(b bool) float64 {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 func (s *Server) updateServerMetrics() {

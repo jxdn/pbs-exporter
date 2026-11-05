@@ -57,9 +57,9 @@ func (c *Client) GetPbsnodesOutput() (string, error) {
 	return c.run("pbsnodes", "-aSj")
 }
 
-// GetQstatQOutput executes qstat -q and returns the output
-func (c *Client) GetQstatQOutput() (string, error) {
-	return c.run("qstat", "-q")
+// GetQstatQueuesJSON executes qstat -Qf -F json and returns the output
+func (c *Client) GetQstatQueuesJSON() (string, error) {
+	return c.run("qstat", "-Qf", "-F", "json")
 }
 
 // GetQstatBfOutput executes qstat -Bf and returns the output
@@ -125,18 +125,14 @@ type JobDetail struct {
 	QueuedAt          time.Time
 }
 
-// QueueInfo represents information about a single queue
+// QueueInfo represents a single queue from qstat -Qf -F json
 type QueueInfo struct {
-	Running  int
-	Queued   int
-	Enabled  bool
-	Started  bool
-	Walltime int
-}
-
-// QueueData represents parsed queue information from qstat -q
-type QueueData struct {
-	Queues map[string]QueueInfo
+	Type      string // Execution or Route
+	Enabled   bool
+	Started   bool
+	Walltime  int // resources_max.walltime in seconds, 0 if unset
+	TotalJobs int
+	Jobs      map[string]int // jobs per state from state_count: Queued, Held, Running, ...
 }
 
 // ServerData represents parsed server information from qstat -Bf
@@ -308,140 +304,47 @@ func parseExecVnodeGPUs(execVnode string) map[string]int {
 	return nodes
 }
 
-// ParseQstatQSummary parses `qstat -q` output and returns totals for running and queued jobs
-func (c *Client) ParseQstatQSummary(output string) (totalRunning int, totalQueued int) {
-	scanner := bufio.NewScanner(strings.NewReader(output))
-	seenSeparator := false
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
+// ParseQstatQueuesJSON parses `qstat -Qf -F json` output into queues by name.
+// Every queue PBS reports is returned, so new queues appear without code changes.
+func (c *Client) ParseQstatQueuesJSON(output string) (map[string]QueueInfo, error) {
+	var parsed struct {
+		Queue map[string]struct {
+			QueueType    string          `json:"queue_type"`
+			Enabled      json.RawMessage `json:"enabled"`
+			Started      json.RawMessage `json:"started"`
+			TotalJobs    json.RawMessage `json:"total_jobs"`
+			StateCount   string          `json:"state_count"`
+			ResourcesMax struct {
+				Walltime json.RawMessage `json:"walltime"`
+			} `json:"resources_max"`
+		} `json:"Queue"`
+	}
+	if err := json.Unmarshal([]byte(output), &parsed); err != nil {
+		log.Printf("Error parsing qstat -Qf JSON output: %v", err)
+		return nil, err
+	}
+
+	queues := make(map[string]QueueInfo, len(parsed.Queue))
+	for name, q := range parsed.Queue {
+		info := QueueInfo{
+			Type:      q.QueueType,
+			Enabled:   strings.EqualFold(rawString(q.Enabled), "true"),
+			Started:   strings.EqualFold(rawString(q.Started), "true"),
+			Walltime:  parseWalltimeToSeconds(rawString(q.ResourcesMax.Walltime)),
+			TotalJobs: int(rawNumber(q.TotalJobs)),
+			Jobs:      make(map[string]int),
 		}
-		// Detect separator
-		if strings.HasPrefix(line, "---") {
-			seenSeparator = true
-			continue
-		}
-		if seenSeparator {
-			// Totals line typically: "55     2"
-			fields := strings.Fields(line)
-			if len(fields) >= 2 {
-				if v, err := strconv.Atoi(fields[0]); err == nil {
-					totalRunning = v
+		// state_count looks like "Transit:0 Queued:5 Held:1 Waiting:0 Running:32 Exiting:0 Begun:5"
+		for _, part := range strings.Fields(q.StateCount) {
+			if state, n, ok := strings.Cut(part, ":"); ok {
+				if v, err := strconv.Atoi(n); err == nil {
+					info.Jobs[state] = v
 				}
-				if v, err := strconv.Atoi(fields[1]); err == nil {
-					totalQueued = v
-				}
-				return
 			}
 		}
-
-		// Fallback: sum per-queue lines by extracting numeric fields before state
-		fields := strings.Fields(line)
-		if len(fields) < 3 || strings.EqualFold(fields[0], "Queue") || strings.EqualFold(fields[0], "server:") {
-			continue
-		}
-		// Collect ints in this line
-		var nums []int
-		for _, f := range fields {
-			if n, err := strconv.Atoi(f); err == nil {
-				nums = append(nums, n)
-			}
-		}
-		if len(nums) >= 2 {
-			// Heuristic: last two numbers are Run and Que
-			totalRunning += nums[len(nums)-2]
-			totalQueued += nums[len(nums)-1]
-		}
+		queues[name] = info
 	}
-	return
-}
-
-// ParseQstatQPerQueue parses `qstat -q` output and returns per-queue running and queued counts
-func (c *Client) ParseQstatQPerQueue(output string) (runningByQueue map[string]int, queuedByQueue map[string]int) {
-	runningByQueue = make(map[string]int)
-	queuedByQueue = make(map[string]int)
-
-	scanner := bufio.NewScanner(strings.NewReader(output))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "server:") || strings.HasPrefix(strings.ToLower(line), "queue ") || strings.HasPrefix(line, "---") {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) < 3 {
-			continue
-		}
-		queueName := fields[0]
-		// Extract integers in line
-		var nums []int
-		for _, f := range fields {
-			if n, err := strconv.Atoi(f); err == nil {
-				nums = append(nums, n)
-			}
-		}
-		if len(nums) >= 2 {
-			// Heuristic: last two numbers are Run and Que
-			runningByQueue[queueName] = nums[len(nums)-2]
-			queuedByQueue[queueName] = nums[len(nums)-1]
-		}
-	}
-	return
-}
-
-// ParseQstatQFull parses `qstat -q` output and returns full queue data including state
-func (c *Client) ParseQstatQFull(output string) *QueueData {
-	data := &QueueData{
-		Queues: make(map[string]QueueInfo),
-	}
-
-	scanner := bufio.NewScanner(strings.NewReader(output))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "server:") || strings.HasPrefix(strings.ToLower(line), "queue ") || strings.HasPrefix(line, "---") {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) < 9 {
-			continue
-		}
-		queueName := fields[0]
-		walltimeStr := fields[2]
-		stateStr := ""
-		if len(fields) >= 10 {
-			stateStr = fields[len(fields)-2] + " " + fields[len(fields)-1]
-		} else if len(fields) >= 9 {
-			stateStr = fields[len(fields)-1]
-		}
-
-		var nums []int
-		for _, f := range fields {
-			if n, err := strconv.Atoi(f); err == nil {
-				nums = append(nums, n)
-			}
-		}
-
-		running := 0
-		queued := 0
-		if len(nums) >= 2 {
-			running = nums[len(nums)-2]
-			queued = nums[len(nums)-1]
-		}
-
-		enabled := strings.Contains(stateStr, "E")
-		started := strings.Contains(stateStr, "R")
-
-		walltime := parseWalltimeToSeconds(walltimeStr)
-
-		data.Queues[queueName] = QueueInfo{
-			Running:  running,
-			Queued:   queued,
-			Enabled:  enabled,
-			Started:  started,
-			Walltime: walltime,
-		}
-	}
-	return data
+	return queues, nil
 }
 
 // ParseQstatBf parses `qstat -Bf` output and returns server data

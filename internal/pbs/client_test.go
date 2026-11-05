@@ -187,3 +187,62 @@ func TestParseQstatJobsJSONFile(t *testing.T) {
 		t.Logf("%s %s %s %s %s %q %v gpus=%d", j.JobID, j.State, j.User, j.Queue, j.Project, j.Name, j.Nodes, j.GPUsRequested)
 	}
 }
+
+const qstatQueuesJSON = `{
+    "timestamp":1792374821,
+    "pbs_version":"2024.1.0.20240130071604",
+    "Queue":{
+        "AISG_debug":{
+            "queue_type":"Execution",
+            "total_jobs":38,
+            "state_count":"Transit:0 Queued:0 Held:1 Waiting:0 Running:32 Exiting:0 Begun:5 ",
+            "resources_max":{"ngpus":128, "walltime":"1440:00:00"},
+            "enabled":"True",
+            "started":"True"
+        },
+        "smallx":{
+            "queue_type":"Execution",
+            "total_jobs":7,
+            "state_count":"Transit:0 Queued:4 Held:0 Waiting:0 Running:3 Exiting:0 Begun:0 ",
+            "resources_max":{"walltime":"24:00:00"},
+            "enabled":"False",
+            "started":"True"
+        },
+        "auto":{
+            "queue_type":"Route",
+            "total_jobs":0,
+            "state_count":"Transit:0 Queued:0 Held:0 Waiting:0 Running:0 Exiting:0 Begun:0 ",
+            "enabled":"True",
+            "started":"True"
+        }
+    }
+}`
+
+func TestParseQstatQueuesJSON(t *testing.T) {
+	got, err := NewClient().ParseQstatQueuesJSON(qstatQueuesJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zero := func(m map[string]int) map[string]int {
+		for _, s := range []string{"Transit", "Queued", "Held", "Waiting", "Running", "Exiting", "Begun"} {
+			if _, ok := m[s]; !ok {
+				m[s] = 0
+			}
+		}
+		return m
+	}
+	want := map[string]QueueInfo{
+		"AISG_debug": {Type: "Execution", Enabled: true, Started: true, Walltime: 1440 * 3600, TotalJobs: 38,
+			Jobs: zero(map[string]int{"Held": 1, "Running": 32, "Begun": 5})},
+		"smallx": {Type: "Execution", Enabled: false, Started: true, Walltime: 24 * 3600, TotalJobs: 7,
+			Jobs: zero(map[string]int{"Queued": 4, "Running": 3})},
+		"auto": {Type: "Route", Enabled: true, Started: true, Jobs: zero(map[string]int{})},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ParseQstatQueuesJSON mismatch\n got: %+v\nwant: %+v", got, want)
+	}
+
+	if _, err := NewClient().ParseQstatQueuesJSON("not json"); err == nil {
+		t.Error("expected error for invalid JSON")
+	}
+}

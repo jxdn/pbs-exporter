@@ -71,6 +71,8 @@ type Registry struct {
 	QueueRunningJobs    *prometheus.GaugeVec
 	QueueQueuedJobs     *prometheus.GaugeVec
 	QueueWalltime       *prometheus.GaugeVec
+	QueueInfo           *prometheus.GaugeVec
+	QueueJobs           *prometheus.GaugeVec
 
 	ServerState              prometheus.Gauge
 	ServerSchedulingEnabled  prometheus.Gauge
@@ -544,6 +546,22 @@ func NewRegistry() *Registry {
 			[]string{"queue"},
 		),
 
+		QueueInfo: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_queue_info",
+				Help: "Every queue PBS reports (always 1); type is Execution or Route",
+			},
+			[]string{"queue", "type"},
+		),
+
+		QueueJobs: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_queue_jobs",
+				Help: "Jobs per queue and state (Queued, Held, Waiting, Running, Exiting, Begun, Transit)",
+			},
+			[]string{"queue", "state"},
+		),
+
 		ServerState: prometheus.NewGauge(
 			prometheus.GaugeOpts{
 				Name: "pbs_server_state",
@@ -732,6 +750,8 @@ func (r *Registry) registerMetrics() {
 		r.QueueRunningJobs,
 		r.QueueQueuedJobs,
 		r.QueueWalltime,
+		r.QueueInfo,
+		r.QueueJobs,
 		r.ServerState,
 		r.ServerSchedulingEnabled,
 		r.ServerTotalJobs,
@@ -798,5 +818,7 @@ func (r *Registry) ResetQueueMetrics() {
 	r.QueueRunningJobs.Reset()
 	r.QueueQueuedJobs.Reset()
 	r.QueueWalltime.Reset()
+	r.QueueInfo.Reset()
+	r.QueueJobs.Reset()
 	r.QueueQueuedByQueue.Reset()
 }
