@@ -104,6 +104,14 @@ Example alert: `time() - pbs_exporter_last_success_timestamp_seconds{command="qs
 - `pbs_node_count_offline`: Number of nodes in offline state
 - `pbs_node_count_down`: Number of nodes in down state
 
+## Grafana Dashboard
+
+[`grafana/pbs-cluster-dashboard.json`](grafana/pbs-cluster-dashboard.json) is a ready-to-import dashboard. Import it with **Dashboards → New → Import → Upload dashboard JSON file**, then pick your Prometheus data source and a cluster at the top.
+
+It starts with an **executive summary**: GPU allocation and actual GPU use, GPUs held but idle, running and waiting jobs, GPU demand waiting, longest queue wait, nodes by state, active projects and exporter health. Below it are rows for trends, projects, users, queues, idle GPU jobs, longest-waiting jobs, nodes and exporter health.
+
+The **Cluster** dropdown lists every scrape job that exports `pbs_node_state`, so each pbs-exporter in the same Prometheus appears automatically. The actual-GPU-use panels match DCGM GPUs to PBS nodes by name, and the idle panels need the rules in `prometheus/` to be loaded.
+
 ## Idle GPU Jobs
 
 [`prometheus/idle_gpu_jobs.rules.yml`](prometheus/idle_gpu_jobs.rules.yml) finds running jobs that hold GPUs but don't use them. It joins `pbs_job_*` with the per-GPU `gpu_process_count{exported_job="<job id>"}` metric from the compute nodes and with `DCGM_FI_DEV_GPU_UTIL`. A job is idle when it has run for over 30 minutes and either none of its GPUs has a process or its GPUs averaged under 1% util over 30 minutes.
