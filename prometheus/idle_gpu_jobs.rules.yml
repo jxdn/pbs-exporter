@@ -14,7 +14,7 @@ groups:
           max by (node, gpu, job_id) (
             label_replace(label_replace(
               gpu_process_count{exported_job!="none"} > 0,
-              "node", "$1", "instance", "([^:]+):.*"),
+              "node", "$1", "instance", "([^:]+)(?::.*)?"),
               "job_id", "$1", "exported_job", "(.+)")
           ) * 0 + 1
 
@@ -22,7 +22,7 @@ groups:
       - record: pbs:gpu_process_exporter_node
         expr: |
           count by (node) (
-            label_replace(gpu_process_count, "node", "$1", "instance", "([^:]+):.*")
+            label_replace(gpu_process_count, "node", "$1", "instance", "([^:]+)(?::.*)?")
           )
 
       # GPUs per job that have at least one process
@@ -37,7 +37,7 @@ groups:
             * on (node, gpu) group_left
             max by (node, gpu) (
               label_replace(avg_over_time(DCGM_FI_DEV_GPU_UTIL[30m]),
-                "node", "$1", "instance", "([^:]+):.*")
+                "node", "$1", "instance", "([^:]+)(?::.*)?")
             )
           )
 
@@ -53,7 +53,7 @@ groups:
             and on (node) pbs:gpu_process_exporter_node
             and on (job_id) (pbs_job_walltime_used_seconds > 1800)
           )
-          * on (job_id, node) group_left (user, queue, job_name) pbs_job_info
+          * on (job_id, node) group_left (user, queue, project, job_name) pbs_job_info
 
       - alert: PBSJobGPUIdle
         expr: pbs:job_gpu_idle
@@ -61,5 +61,5 @@ groups:
         labels:
           severity: info
         annotations:
-          summary: "{{ $labels.user }} job {{ $labels.job_name }} ({{ $labels.job_id }}) is idle on {{ $labels.node }}"
+          summary: "{{ $labels.user }} ({{ $labels.project }}) job {{ $labels.job_name }} ({{ $labels.job_id }}) is idle on {{ $labels.node }}"
           description: "Holds {{ $value }} GPU(s) with no GPU process or <1% GPU util for 30m+."

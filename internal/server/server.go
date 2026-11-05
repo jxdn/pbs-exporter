@@ -1,6 +1,8 @@
 package server
 
 import (
+	"time"
+
 	"pbs-exporter/internal/metrics"
 	"pbs-exporter/internal/pbs"
 )
@@ -51,10 +53,23 @@ func (s *Server) updateJobDetailMetrics() {
 		return
 	}
 
+	now := time.Now()
 	for _, job := range s.pbsClient.ParseQstatJobsJSON(output) {
+		s.registry.ProjectJobs.WithLabelValues(job.Project, job.State).Inc()
+
+		if job.State != "R" {
+			s.registry.JobQueuedInfo.WithLabelValues(job.JobID, job.User, job.Queue, job.Project, job.Name, job.State).Set(1)
+			if !job.QueuedAt.IsZero() {
+				s.registry.JobQueuedSeconds.WithLabelValues(job.JobID).Set(now.Sub(job.QueuedAt).Seconds())
+			}
+			s.registry.ProjectGpus.WithLabelValues(job.Project, job.State).Add(float64(job.GPUsRequested))
+			continue
+		}
+
 		for node, gpus := range job.Nodes {
-			s.registry.JobInfo.WithLabelValues(job.JobID, job.User, job.Queue, job.Name, node).Set(1)
+			s.registry.JobInfo.WithLabelValues(job.JobID, job.User, job.Queue, job.Project, job.Name, node).Set(1)
 			s.registry.JobGpus.WithLabelValues(job.JobID, node).Set(float64(gpus))
+			s.registry.ProjectGpus.WithLabelValues(job.Project, job.State).Add(float64(gpus))
 		}
 		s.registry.JobWalltimeUsed.WithLabelValues(job.JobID).Set(float64(job.WalltimeUsed))
 		s.registry.JobWalltimeRequested.WithLabelValues(job.JobID).Set(float64(job.WalltimeRequested))

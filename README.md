@@ -54,11 +54,20 @@ Entry point that orchestrates all components:
 - `qstat_total_all_jobs`: Total number of all jobs
 - `qstat_jobs_by_status`: Number of jobs by status
 
-### Per-Job Metrics (running jobs, from `qstat -f -F json -t`)
-- `pbs_job_info{job_id,user,queue,job_name,node}`: Always 1, one series per job per node (full job name)
+### Per-Job Metrics (from `qstat -f -F json -t`)
+Running jobs:
+- `pbs_job_info{job_id,user,queue,project,job_name,node}`: Always 1, one series per job per node (full job name)
 - `pbs_job_gpus{job_id,node}`: GPUs allocated to the job on that node
 - `pbs_job_walltime_used_seconds{job_id}`: Walltime used
 - `pbs_job_walltime_requested_seconds{job_id}`: Walltime requested
+
+Queued (Q) and held (H) jobs:
+- `pbs_job_queued_info{job_id,user,queue,project,job_name,state}`: Always 1
+- `pbs_job_queued_seconds{job_id}`: Seconds since the job entered the queue (`qtime`)
+
+Per project (`project` is `none` when a job has no project):
+- `pbs_project_jobs{project,state}`: Jobs per project in state R, Q or H
+- `pbs_project_gpus{project,state}`: GPUs allocated (R) or requested (Q, H) per project
 
 ### Node Metrics
 - `pbs_node_state`: Node state (1=free, 2=job-busy, 3=offline, 4=down)

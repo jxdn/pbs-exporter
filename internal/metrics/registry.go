@@ -23,6 +23,10 @@ type Registry struct {
 	JobGpus              *prometheus.GaugeVec
 	JobWalltimeUsed      *prometheus.GaugeVec
 	JobWalltimeRequested *prometheus.GaugeVec
+	JobQueuedInfo        *prometheus.GaugeVec
+	JobQueuedSeconds     *prometheus.GaugeVec
+	ProjectJobs          *prometheus.GaugeVec
+	ProjectGpus          *prometheus.GaugeVec
 
 	NodeState           *prometheus.GaugeVec
 	NodeJobs            *prometheus.GaugeVec
@@ -188,7 +192,39 @@ func NewRegistry() *Registry {
 				Name: "pbs_job_info",
 				Help: "Running job information per node (always 1)",
 			},
-			[]string{"job_id", "user", "queue", "job_name", "node"},
+			[]string{"job_id", "user", "queue", "project", "job_name", "node"},
+		),
+
+		JobQueuedInfo: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_job_queued_info",
+				Help: "Queued (Q) or held (H) job information (always 1)",
+			},
+			[]string{"job_id", "user", "queue", "project", "job_name", "state"},
+		),
+
+		JobQueuedSeconds: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_job_queued_seconds",
+				Help: "Seconds since a queued or held job entered the queue",
+			},
+			[]string{"job_id"},
+		),
+
+		ProjectJobs: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_project_jobs",
+				Help: "Number of jobs per project and state (R, Q, H)",
+			},
+			[]string{"project", "state"},
+		),
+
+		ProjectGpus: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_project_gpus",
+				Help: "GPUs per project and state: allocated for R, requested for Q and H",
+			},
+			[]string{"project", "state"},
 		),
 
 		JobGpus: prometheus.NewGaugeVec(
@@ -626,6 +662,10 @@ func (r *Registry) registerMetrics() {
 		r.JobGpus,
 		r.JobWalltimeUsed,
 		r.JobWalltimeRequested,
+		r.JobQueuedInfo,
+		r.JobQueuedSeconds,
+		r.ProjectJobs,
+		r.ProjectGpus,
 		r.NodeState,
 		r.NodeJobs,
 		r.NodeCpusAvailable,
@@ -698,6 +738,10 @@ func (r *Registry) ResetJobDetailMetrics() {
 	r.JobGpus.Reset()
 	r.JobWalltimeUsed.Reset()
 	r.JobWalltimeRequested.Reset()
+	r.JobQueuedInfo.Reset()
+	r.JobQueuedSeconds.Reset()
+	r.ProjectJobs.Reset()
+	r.ProjectGpus.Reset()
 }
 
 func (r *Registry) ResetNodeMetrics() {

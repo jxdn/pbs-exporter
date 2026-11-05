@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Client handles PBS command execution and data parsing
@@ -129,15 +130,19 @@ type NodeInfo struct {
 	MemoryTotal     float64
 }
 
-// JobDetail represents a single running job from qstat -f -F json
+// JobDetail represents a single running, queued or held job from qstat -f -F json
 type JobDetail struct {
 	JobID             string
+	State             string // R, Q or H
 	User              string
 	Queue             string
+	Project           string
 	Name              string
-	Nodes             map[string]int // node name -> GPUs allocated on that node
-	WalltimeUsed      int            // seconds
-	WalltimeRequested int            // seconds
+	Nodes             map[string]int // node name -> GPUs allocated on that node (running jobs only)
+	GPUsRequested     int
+	WalltimeUsed      int // seconds
+	WalltimeRequested int // seconds
+	QueuedAt          time.Time
 }
 
 // QueueInfo represents information about a single queue
@@ -251,20 +256,24 @@ func (c *Client) ParseQstatOutput(output string) *JobData {
 	return data
 }
 
-// ParseQstatJobsJSON parses `qstat -f -F json` output and returns running jobs
+// ParseQstatJobsJSON parses `qstat -f -F json` output and returns running (R),
+// queued (Q) and held (H) jobs
 func (c *Client) ParseQstatJobsJSON(output string) []JobDetail {
 	var parsed struct {
 		Jobs map[string]struct {
-			JobName       string `json:"Job_Name"`
-			JobOwner      string `json:"Job_Owner"`
-			JobState      string `json:"job_state"`
-			Queue         string `json:"queue"`
-			ExecVnode     string `json:"exec_vnode"`
+			JobName       string          `json:"Job_Name"`
+			JobOwner      string          `json:"Job_Owner"`
+			JobState      string          `json:"job_state"`
+			Queue         string          `json:"queue"`
+			Project       string          `json:"project"`
+			ExecVnode     string          `json:"exec_vnode"`
+			Qtime         json.RawMessage `json:"qtime"`
 			ResourcesUsed struct {
 				Walltime string `json:"walltime"`
 			} `json:"resources_used"`
 			ResourceList struct {
-				Walltime string `json:"walltime"`
+				Walltime string          `json:"walltime"`
+				NGPUs    json.RawMessage `json:"ngpus"`
 			} `json:"Resource_List"`
 		} `json:"Jobs"`
 	}
@@ -275,21 +284,61 @@ func (c *Client) ParseQstatJobsJSON(output string) []JobDetail {
 
 	var jobs []JobDetail
 	for jobID, j := range parsed.Jobs {
-		if j.JobState != "R" {
+		if j.JobState != "R" && j.JobState != "Q" && j.JobState != "H" {
 			continue
 		}
 		user, _, _ := strings.Cut(j.JobOwner, "@")
-		jobs = append(jobs, JobDetail{
+		project := j.Project
+		if project == "" {
+			project = "none"
+		}
+		job := JobDetail{
 			JobID:             jobID,
+			State:             j.JobState,
 			User:              user,
 			Queue:             j.Queue,
+			Project:           project,
 			Name:              j.JobName,
-			Nodes:             parseExecVnodeGPUs(j.ExecVnode),
+			GPUsRequested:     int(rawNumber(j.ResourceList.NGPUs)),
 			WalltimeUsed:      parseWalltimeToSeconds(j.ResourcesUsed.Walltime),
 			WalltimeRequested: parseWalltimeToSeconds(j.ResourceList.Walltime),
-		})
+			QueuedAt:          parsePbsTime(j.Qtime),
+		}
+		if j.JobState == "R" {
+			job.Nodes = parseExecVnodeGPUs(j.ExecVnode)
+		}
+		jobs = append(jobs, job)
 	}
 	return jobs
+}
+
+// rawString returns a JSON value as text, whether it was a JSON string or number
+func rawString(raw json.RawMessage) string {
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+	return strings.TrimSpace(string(raw))
+}
+
+// rawNumber returns a JSON string or number as float64 (0 if absent or not numeric)
+func rawNumber(raw json.RawMessage) float64 {
+	n, _ := strconv.ParseFloat(rawString(raw), 64)
+	return n
+}
+
+// parsePbsTime parses a PBS timestamp, either "Mon Oct 19 09:16:22 2026" (server
+// local time) or epoch seconds; returns the zero time if empty or unparseable
+func parsePbsTime(raw json.RawMessage) time.Time {
+	s := rawString(raw)
+	if epoch, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return time.Unix(epoch, 0)
+	}
+	t, err := time.ParseInLocation("Mon Jan _2 15:04:05 2006", s, time.Local)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
 }
 
 // parseExecVnodeGPUs parses exec_vnode like "(hopper-04:ngpus=1:ncpus=12)+(hopper-05:ncpus=4)"
