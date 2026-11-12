@@ -215,6 +215,26 @@ func (c *Client) ParseQstatJobsJSON(output string) ([]JobDetail, string, error) 
 			} `json:"Resource_List"`
 		} `json:"Jobs"`
 	}
+	// The exporter does not consume am_job_cache, but some PBS qstat versions
+	// emit this JSON-format resource with invalid quoting (for example, the
+	// value `""{}\"`). Replace its value so that unrelated malformed
+	// metadata does not prevent parsing the job fields used below.
+	lines := strings.Split(output, "\n")
+	const amJobCacheKey = `"am_job_cache":`
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, amJobCacheKey) {
+			continue
+		}
+		indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+		comma := strings.HasSuffix(trimmed, ",")
+		lines[i] = indent + amJobCacheKey + "null"
+		if comma {
+			lines[i] += ","
+		}
+	}
+	output = strings.Join(lines, "\n")
+
 	if err := json.Unmarshal([]byte(output), &parsed); err != nil {
 		log.Printf("Error parsing qstat JSON output: %v", err)
 		return nil, "", err
