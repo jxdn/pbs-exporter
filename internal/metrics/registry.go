@@ -19,17 +19,20 @@ type Registry struct {
 	TotalAllJobs       prometheus.Gauge
 	JobsByStatus       *prometheus.GaugeVec
 
-	JobInfo              *prometheus.GaugeVec
-	JobGpus              *prometheus.GaugeVec
-	JobWalltimeUsed      *prometheus.GaugeVec
-	JobWalltimeRequested *prometheus.GaugeVec
-	JobQueuedInfo        *prometheus.GaugeVec
-	JobQueuedSeconds     *prometheus.GaugeVec
-	JobWaitReason        *prometheus.GaugeVec
-	QueueWaitReasonJobs  *prometheus.GaugeVec
-	QueueWaitReasonGpus  *prometheus.GaugeVec
-	ProjectJobs          *prometheus.GaugeVec
-	ProjectGpus          *prometheus.GaugeVec
+	JobInfo               *prometheus.GaugeVec
+	JobGpus               *prometheus.GaugeVec
+	JobWalltimeUsed       *prometheus.GaugeVec
+	JobWalltimeRequested  *prometheus.GaugeVec
+	JobQueuedInfo         *prometheus.GaugeVec
+	JobQueuedSeconds      *prometheus.GaugeVec
+	JobWaitReason         *prometheus.GaugeVec
+	QueueWaitReasonJobs   *prometheus.GaugeVec
+	QueueWaitReasonGpus   *prometheus.GaugeVec
+	JobChargeRate         *prometheus.GaugeVec
+	JobChargeGpuHours     *prometheus.GaugeVec
+	ProjectChargeGpuHours *prometheus.GaugeVec
+	ProjectJobs           *prometheus.GaugeVec
+	ProjectGpus           *prometheus.GaugeVec
 
 	ExporterCommandSuccess  *prometheus.GaugeVec
 	ExporterCommandDuration *prometheus.GaugeVec
@@ -242,6 +245,30 @@ func NewRegistry() *Registry {
 				Help: "GPUs requested by jobs not running, per queue, wait reason and detail",
 			},
 			[]string{"queue", "reason", "detail"},
+		),
+
+		JobChargeRate: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_job_charge_rate",
+				Help: "Budgets queue_charge_rate of the job from am_job_cache (1 = normal, 0 = free)",
+			},
+			[]string{"job_id"},
+		),
+
+		JobChargeGpuHours: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_job_charge_gpu_hours",
+				Help: "GPU-hours charged to the job (GPUs x hours x charge rate, from am_job_cache): kind=requested for the full walltime, kind=used so far (running jobs)",
+			},
+			[]string{"job_id", "kind"},
+		),
+
+		ProjectChargeGpuHours: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_project_charge_gpu_hours",
+				Help: "GPU-hours charged per project and job state (GPUs x hours x charge rate, from am_job_cache): kind=requested or used",
+			},
+			[]string{"project", "state", "kind"},
 		),
 
 		ProjectJobs: prometheus.NewGaugeVec(
@@ -740,6 +767,9 @@ func (r *Registry) registerMetrics() {
 		r.JobWaitReason,
 		r.QueueWaitReasonJobs,
 		r.QueueWaitReasonGpus,
+		r.JobChargeRate,
+		r.JobChargeGpuHours,
+		r.ProjectChargeGpuHours,
 		r.ProjectJobs,
 		r.ProjectGpus,
 		r.ExporterCommandSuccess,
@@ -824,6 +854,9 @@ func (r *Registry) ResetJobDetailMetrics() {
 	r.JobWaitReason.Reset()
 	r.QueueWaitReasonJobs.Reset()
 	r.QueueWaitReasonGpus.Reset()
+	r.JobChargeRate.Reset()
+	r.JobChargeGpuHours.Reset()
+	r.ProjectChargeGpuHours.Reset()
 	r.ProjectJobs.Reset()
 	r.ProjectGpus.Reset()
 }

@@ -66,6 +66,13 @@ Queued (Q), held (H) and waiting (W) jobs:
 - `pbs_job_queued_seconds{job_id}`: Seconds since the job entered the queue (`qtime`)
 - `pbs_job_wait_reason{job_id,reason,detail,comment}`: Always 1. Why the job isn't running; `comment` is the raw PBS comment
 
+Budget charge, from `Resource_List.am_job_cache` (written by the PBS Budgets hook; only for jobs that have it):
+- `pbs_job_charge_rate{job_id}`: The queue's charge rate for the job (1 = normal, 0 = free queue)
+- `pbs_job_charge_gpu_hours{job_id,kind}`: GPUs × hours × charge rate. `kind="requested"` is the full requested walltime; `kind="used"` is the walltime used so far (running jobs)
+- `pbs_project_charge_gpu_hours{project,state,kind}`: The same, summed per project and job state
+
+Some PBS versions write `am_job_cache` with broken quoting. Those values are skipped (that job gets no charge metrics), and the rest of the qstat output still parses.
+
 Why jobs wait, per queue:
 - `pbs_queue_wait_reason_jobs{queue,reason,detail}`: Jobs not running
 - `pbs_queue_wait_reason_gpus{queue,reason,detail}`: GPUs those jobs request

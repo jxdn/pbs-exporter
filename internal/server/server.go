@@ -92,6 +92,18 @@ func (s *Server) updateJobMetrics() {
 			continue
 		}
 		s.registry.ProjectJobs.WithLabelValues(job.Project, job.State).Inc()
+
+		if b := job.Budget; b != nil {
+			requested := b.GPUHoursRequested()
+			s.registry.JobChargeRate.WithLabelValues(job.JobID).Set(b.ChargeRate)
+			s.registry.JobChargeGpuHours.WithLabelValues(job.JobID, "requested").Set(requested)
+			s.registry.ProjectChargeGpuHours.WithLabelValues(job.Project, job.State, "requested").Add(requested)
+			if job.State == "R" {
+				used := b.GPUHoursUsed(job.WalltimeUsed)
+				s.registry.JobChargeGpuHours.WithLabelValues(job.JobID, "used").Set(used)
+				s.registry.ProjectChargeGpuHours.WithLabelValues(job.Project, job.State, "used").Add(used)
+			}
+		}
 	}
 }
 

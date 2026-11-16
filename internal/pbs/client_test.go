@@ -246,3 +246,96 @@ func TestParseQstatQueuesJSON(t *testing.T) {
 		t.Error("expected error for invalid JSON")
 	}
 }
+
+const amJobCacheJSON = `{
+    "pbs_version":"2026.0.0",
+    "Jobs":{
+        "1.srv":{
+            "Job_Owner":"alice@login",
+            "job_state":"R",
+            "queue":"gpu",
+            "exec_vnode":"(n1:ngpus=2:ncpus=24)",
+            "resources_used":{
+                "walltime":"01:30:00"
+            },
+            "Resource_List":{
+                "am_job_cache":"{\"job.walltime\": 7200, \"job.ncpus\": 24.0, \"job.ngpus\": 2.0, \"job.queue_charge_rate\": 1.0, \"formula_constants\": \"\", \"am_cloud_enabled\": false}",
+                "ngpus":2,
+                "walltime":"02:00:00"
+            }
+        },
+        "2.srv":{
+            "Job_Owner":"bob@login",
+            "job_state":"Q",
+            "queue":"free",
+            "Resource_List":{
+                "am_job_cache":"{\"job.walltime\": 3600, \"job.ncpus\": 12.0, \"job.ngpus\": 1.0, \"job.queue_charge_rate\": 0}",
+                "ngpus":1,
+                "walltime":"01:00:00"
+            }
+        },
+        "3.srv":{
+            "Job_Owner":"carol@login",
+            "job_state":"Q",
+            "queue":"gpu",
+            "Resource_List":{
+                "am_job_cache":""{}\"",
+                "ngpus":4,
+                "walltime":"01:00:00"
+            }
+        },
+        "4.srv":{
+            "Job_Owner":"dave@login",
+            "job_state":"Q",
+            "queue":"gpu",
+            "Resource_List":{
+                "ngpus":1
+            }
+        }
+    }
+}`
+
+func TestParseAmJobCache(t *testing.T) {
+	jobs, version, err := NewClient().ParseQstatJobsJSON(amJobCacheJSON)
+	if err != nil {
+		t.Fatalf("malformed am_job_cache should not fail parsing: %v", err)
+	}
+	if version != "2026.0.0" {
+		t.Errorf("version = %q", version)
+	}
+	byID := map[string]JobDetail{}
+	for _, j := range jobs {
+		byID[j.JobID] = j
+	}
+	if len(byID) != 4 {
+		t.Fatalf("got %d jobs, want 4", len(byID))
+	}
+
+	b := byID["1.srv"].Budget
+	if b == nil {
+		t.Fatal("1.srv: budget not parsed")
+	}
+	if b.Walltime != 7200 || b.NCPUs != 24 || b.NGPUs != 2 || b.ChargeRate != 1 {
+		t.Errorf("1.srv budget = %+v", *b)
+	}
+	if got := b.GPUHoursRequested(); got != 4 {
+		t.Errorf("1.srv requested GPU-hours = %v, want 4", got)
+	}
+	if got := b.GPUHoursUsed(byID["1.srv"].WalltimeUsed); got != 3 {
+		t.Errorf("1.srv used GPU-hours = %v, want 3", got)
+	}
+
+	free := byID["2.srv"].Budget
+	if free == nil || free.ChargeRate != 0 || free.GPUHoursRequested() != 0 {
+		t.Errorf("2.srv (free queue) budget = %+v", free)
+	}
+	if byID["3.srv"].Budget != nil {
+		t.Errorf("3.srv: malformed am_job_cache should give nil budget, got %+v", *byID["3.srv"].Budget)
+	}
+	if byID["3.srv"].GPUsRequested != 4 {
+		t.Errorf("3.srv: other fields should still parse, ngpus = %d", byID["3.srv"].GPUsRequested)
+	}
+	if byID["4.srv"].Budget != nil {
+		t.Error("4.srv: no am_job_cache should give nil budget")
+	}
+}

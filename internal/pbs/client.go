@@ -123,8 +123,30 @@ type JobDetail struct {
 	WalltimeUsed      int // seconds
 	WalltimeRequested int // seconds
 	QueuedAt          time.Time
-	Comment           string // scheduler comment, e.g. "Not Running: Insufficient amount of resource: ngpus"
-	HoldTypes         string // Hold_Types: n (none), u (user), o (operator), s (system), p (password)
+	Comment           string     // scheduler comment, e.g. "Not Running: Insufficient amount of resource: ngpus"
+	HoldTypes         string     // Hold_Types: n (none), u (user), o (operator), s (system), p (password)
+	Budget            *JobBudget // from Resource_List.am_job_cache (Budgets hook); nil if absent or unreadable
+}
+
+// JobBudget is what the PBS Budgets (Allocation Manager) hook charges a job for,
+// read from Resource_List.am_job_cache, e.g.
+// {"job.walltime": 3600, "job.ncpus": 12.0, "job.ngpus": 1.0, "job.queue_charge_rate": 1.0}
+type JobBudget struct {
+	Walltime   int     // seconds the job is charged for (requested walltime)
+	NCPUs      float64 // CPUs charged
+	NGPUs      float64 // GPUs charged
+	ChargeRate float64 // queue_charge_rate: 1 = normal, 0 = free queue
+}
+
+// GPUHoursRequested is GPUs x requested hours x charge rate: what the job is
+// charged in full if it runs its whole walltime
+func (b *JobBudget) GPUHoursRequested() float64 {
+	return b.NGPUs * float64(b.Walltime) / 3600 * b.ChargeRate
+}
+
+// GPUHoursUsed is GPUs x hours used so far x charge rate
+func (b *JobBudget) GPUHoursUsed(walltimeUsed int) float64 {
+	return b.NGPUs * float64(walltimeUsed) / 3600 * b.ChargeRate
 }
 
 // QueueInfo represents a single queue from qstat -Qf -F json
@@ -214,30 +236,13 @@ func (c *Client) ParseQstatJobsJSON(output string) ([]JobDetail, string, error) 
 				Walltime string `json:"walltime"`
 			} `json:"resources_used"`
 			ResourceList struct {
-				Walltime string          `json:"walltime"`
-				NGPUs    json.RawMessage `json:"ngpus"`
+				Walltime   string          `json:"walltime"`
+				NGPUs      json.RawMessage `json:"ngpus"`
+				AmJobCache json.RawMessage `json:"am_job_cache"`
 			} `json:"Resource_List"`
 		} `json:"Jobs"`
 	}
-	// The exporter does not consume am_job_cache, but some PBS qstat versions
-	// emit this JSON-format resource with invalid quoting (for example, the
-	// value `""{}\"`). Replace its value so that unrelated malformed
-	// metadata does not prevent parsing the job fields used below.
-	lines := strings.Split(output, "\n")
-	const amJobCacheKey = `"am_job_cache":`
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, amJobCacheKey) {
-			continue
-		}
-		indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-		comma := strings.HasSuffix(trimmed, ",")
-		lines[i] = indent + amJobCacheKey + "null"
-		if comma {
-			lines[i] += ","
-		}
-	}
-	output = strings.Join(lines, "\n")
+	output = sanitizeAmJobCache(output)
 
 	if err := json.Unmarshal([]byte(output), &parsed); err != nil {
 		log.Printf("Error parsing qstat JSON output: %v", err)
@@ -269,6 +274,7 @@ func (c *Client) ParseQstatJobsJSON(output string) ([]JobDetail, string, error) 
 			QueuedAt:          parsePbsTime(j.Qtime),
 			Comment:           j.Comment,
 			HoldTypes:         j.HoldTypes,
+			Budget:            parseAmJobCache(j.ResourceList.AmJobCache),
 		}
 		if j.JobState == "R" {
 			job.Nodes = parseExecVnodeGPUs(j.ExecVnode)
@@ -276,6 +282,58 @@ func (c *Client) ParseQstatJobsJSON(output string) ([]JobDetail, string, error) 
 		jobs = append(jobs, job)
 	}
 	return jobs, version, nil
+}
+
+// sanitizeAmJobCache replaces am_job_cache values that are not valid JSON with
+// null. Some PBS versions write this field with broken quoting (for example
+// `""{}\"`), which would otherwise make the whole qstat output unparseable.
+// Valid values are kept so the budget fields can be read.
+func sanitizeAmJobCache(output string) string {
+	const key = `"am_job_cache":`
+	if !strings.Contains(output, key) {
+		return output
+	}
+	lines := strings.Split(output, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, key) {
+			continue
+		}
+		comma := strings.HasSuffix(trimmed, ",")
+		value := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(trimmed, key), ","))
+		if json.Valid([]byte(value)) {
+			continue
+		}
+		indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+		lines[i] = indent + key + "null"
+		if comma {
+			lines[i] += ","
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// parseAmJobCache reads am_job_cache, a JSON object stored as a JSON string.
+// It returns nil when the field is absent, null or not readable.
+func parseAmJobCache(raw json.RawMessage) *JobBudget {
+	var text string
+	if len(raw) == 0 || json.Unmarshal(raw, &text) != nil || text == "" {
+		return nil
+	}
+	var cache map[string]json.RawMessage
+	if json.Unmarshal([]byte(text), &cache) != nil {
+		return nil
+	}
+	rate, hasRate := cache["job.queue_charge_rate"]
+	if !hasRate {
+		return nil
+	}
+	return &JobBudget{
+		Walltime:   int(rawNumber(cache["job.walltime"])),
+		NCPUs:      rawNumber(cache["job.ncpus"]),
+		NGPUs:      rawNumber(cache["job.ngpus"]),
+		ChargeRate: rawNumber(rate),
+	}
 }
 
 // rawString returns a JSON value as text, whether it was a JSON string or number

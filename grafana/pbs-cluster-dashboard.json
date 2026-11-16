@@ -1366,7 +1366,7 @@
       "type": "table",
       "title": "Projects",
       "id": 20,
-      "description": "Per project: GPUs and jobs running now, and what is waiting.",
+      "description": "Per project: GPUs and jobs running now, and what is waiting. GPU-hours come from the Budgets hook (am_job_cache): GPUs x hours x queue charge rate, so free queues count 0. Committed = full requested walltime of running, queued and held jobs.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1437,6 +1437,30 @@
           "instant": true,
           "range": false,
           "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (project) (pbs_project_charge_gpu_hours{job=~\"$job\", state=\"R\", kind=\"used\"})",
+          "refId": "F",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (project) (pbs_project_charge_gpu_hours{job=~\"$job\", state=~\"R|Q|H\", kind=\"requested\"})",
+          "refId": "G",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false,
+          "format": "table"
         }
       ],
       "fieldConfig": {
@@ -1446,7 +1470,20 @@
             "filterable": true
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "GPU-hours.*"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "showHeader": true,
@@ -1478,7 +1515,9 @@
               "Time 2": true,
               "Time 3": true,
               "Time 4": true,
-              "Time 5": true
+              "Time 5": true,
+              "Time 6": true,
+              "Time 7": true
             },
             "renameByName": {
               "Value #A": "GPUs in use",
@@ -1486,7 +1525,9 @@
               "Value #C": "Queued jobs",
               "Value #D": "GPUs requested (queued)",
               "Value #E": "Held jobs",
-              "project": "Project"
+              "project": "Project",
+              "Value #F": "GPU-hours used (running)",
+              "Value #G": "GPU-hours committed (running + waiting)"
             }
           }
         }
