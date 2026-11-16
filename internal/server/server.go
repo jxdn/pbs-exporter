@@ -76,6 +76,10 @@ func (s *Server) updateJobMetrics() {
 				s.registry.JobGpus.WithLabelValues(job.JobID, node).Set(float64(gpus))
 				s.registry.ProjectGpus.WithLabelValues(job.Project, job.State).Add(float64(gpus))
 			}
+			for node, cpus := range job.NodeCPUs {
+				s.registry.JobNcpus.WithLabelValues(job.JobID, node).Set(float64(cpus))
+				s.registry.ProjectCpus.WithLabelValues(job.Project, job.State).Add(float64(cpus))
+			}
 			s.registry.JobWalltimeUsed.WithLabelValues(job.JobID).Set(float64(job.WalltimeUsed))
 			s.registry.JobWalltimeRequested.WithLabelValues(job.JobID).Set(float64(job.WalltimeRequested))
 		case "Q", "H", "W":
@@ -88,10 +92,15 @@ func (s *Server) updateJobMetrics() {
 			s.registry.QueueWaitReasonJobs.WithLabelValues(job.Queue, reason, detail).Inc()
 			s.registry.QueueWaitReasonGpus.WithLabelValues(job.Queue, reason, detail).Add(float64(job.GPUsRequested))
 			s.registry.ProjectGpus.WithLabelValues(job.Project, job.State).Add(float64(job.GPUsRequested))
+			s.registry.JobQueuedNcpus.WithLabelValues(job.JobID).Set(float64(job.CPUsRequested))
+			s.registry.ProjectCpus.WithLabelValues(job.Project, job.State).Add(float64(job.CPUsRequested))
 		default:
 			continue
 		}
 		s.registry.ProjectJobs.WithLabelValues(job.Project, job.State).Inc()
+		if job.MemRequested > 0 {
+			s.registry.JobMemBytes.WithLabelValues(job.JobID).Set(job.MemRequested)
+		}
 
 		if b := job.Budget; b != nil {
 			requested := b.GPUHoursRequested()

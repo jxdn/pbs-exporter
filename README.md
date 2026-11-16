@@ -58,12 +58,14 @@ Entry point that orchestrates all components:
 Running jobs:
 - `pbs_job_info{job_id,user,queue,project,job_name,node}`: Always 1, one series per job per node (full job name)
 - `pbs_job_gpus{job_id,node}`: GPUs allocated to the job on that node
+- `pbs_job_ncpus{job_id,node}`: CPU cores allocated to the job on that node (from `exec_vnode`, so multi-node jobs have one series per node)
 - `pbs_job_walltime_used_seconds{job_id}`: Walltime used
 - `pbs_job_walltime_requested_seconds{job_id}`: Walltime requested
 
 Queued (Q), held (H) and waiting (W) jobs:
 - `pbs_job_queued_info{job_id,user,queue,project,job_name,state}`: Always 1
 - `pbs_job_queued_seconds{job_id}`: Seconds since the job entered the queue (`qtime`)
+- `pbs_job_queued_ncpus{job_id}`: CPU cores requested (`Resource_List.ncpus`)
 - `pbs_job_wait_reason{job_id,reason,detail,comment}`: Always 1. Why the job isn't running; `comment` is the raw PBS comment
 
 Budget charge, from `Resource_List.am_job_cache` (written by the PBS Budgets hook; only for jobs that have it):
@@ -97,7 +99,13 @@ Why jobs wait, per queue:
 
 Per project (`project` is `none` when a job has no project):
 - `pbs_project_jobs{project,state}`: Jobs per project in state R, Q or H
-- `pbs_project_gpus{project,state}`: GPUs allocated (R) or requested (Q, H) per project
+- `pbs_project_gpus{project,state}`: GPUs allocated (R) or requested (Q, H, W) per project
+- `pbs_project_cpus{project,state}`: CPU cores allocated (R) or requested (Q, H, W) per project
+
+Any job (R, Q, H, W):
+- `pbs_job_mem_bytes{job_id}`: Memory requested (`Resource_List.mem`), in bytes; only for jobs that set it
+
+Join per-job values with `pbs_job_info` (running) or `pbs_job_queued_info` (waiting) on `job_id` to get user, queue, project and job name. For example, CPU cores per user right now: `sum by (user) (pbs_job_ncpus * on (job_id, node) group_left (user) pbs_job_info)`.
 
 ### Node Metrics
 - `pbs_node_state`: Node state (1=free, 2=job-busy, 3=offline, 4=down)

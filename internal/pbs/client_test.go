@@ -90,12 +90,12 @@ func TestParseQstatJobsJSON(t *testing.T) {
 	want := map[string]JobDetail{
 		"675124.hopper-m-02": {
 			JobID: "675124.hopper-m-02", State: "R", User: "libobo", Queue: "small", Project: "cfp-1234", Name: "g_spike",
-			Nodes: map[string]int{"hopper-04": 1}, GPUsRequested: 1,
+			Nodes: map[string]int{"hopper-04": 1}, NodeCPUs: map[string]int{"hopper-04": 12}, GPUsRequested: 1,
 			WalltimeUsed: 26*60 + 10, WalltimeRequested: 90 * 60,
 		},
 		"675200.hopper-m-02": {
 			JobID: "675200.hopper-m-02", State: "R", User: "alice", Queue: "large", Project: "cfp-5678", Name: "multi_node_training_run",
-			Nodes: map[string]int{"hopper-10": 6, "hopper-11": 4}, GPUsRequested: 10,
+			Nodes: map[string]int{"hopper-10": 6, "hopper-11": 4}, NodeCPUs: map[string]int{"hopper-10": 56, "hopper-11": 48}, GPUsRequested: 10,
 			WalltimeUsed: 100 * 3600, WalltimeRequested: 406*3600 + 46*60 + 16,
 		},
 		"675118.hopper-m-02": {
@@ -111,7 +111,7 @@ func TestParseQstatJobsJSON(t *testing.T) {
 		},
 		"675300[1].hopper-m-02": {
 			JobID: "675300[1].hopper-m-02", State: "R", User: "bob", Queue: "small", Project: "_pbs_project_default", Name: "sweep",
-			Nodes:        map[string]int{"hopper-20": 0},
+			Nodes: map[string]int{"hopper-20": 0}, NodeCPUs: map[string]int{"hopper-20": 4},
 			WalltimeUsed: 5, WalltimeRequested: 600,
 		},
 	}
@@ -337,5 +337,96 @@ func TestParseAmJobCache(t *testing.T) {
 	}
 	if byID["4.srv"].Budget != nil {
 		t.Error("4.srv: no am_job_cache should give nil budget")
+	}
+}
+
+const cpuJobsJSON = `{
+    "pbs_version":"2026.0.0",
+    "Jobs":{
+        "10.srv":{
+            "Job_Owner":"alice@login", "job_state":"R", "queue":"batch_cpu", "project":"p1",
+            "exec_vnode":"(c1:ncpus=64:mem=262144000kb)+(c2:ncpus=32:mem=131072000kb)",
+            "Resource_List":{ "ncpus":96, "mem":"375gb" }
+        },
+        "11.srv":{
+            "Job_Owner":"bob@login", "job_state":"R", "queue":"gpu", "project":"p2",
+            "exec_vnode":"(g1:ngpus=2:ncpus=24:mem=471859200kb)",
+            "Resource_List":{ "ncpus":24, "ngpus":2, "mem":"450GB" }
+        },
+        "12.srv":{
+            "Job_Owner":"carol@login", "job_state":"R", "queue":"batch_cpu",
+            "exec_vnode":"(c3:mem=1gb)",
+            "Resource_List":{ "ncpus":8, "mem":"1gb" }
+        },
+        "13.srv":{
+            "Job_Owner":"dave@login", "job_state":"Q", "queue":"batch_cpu", "project":"p1",
+            "Resource_List":{ "ncpus":"16", "mem":"64gb" }
+        }
+    }
+}`
+
+func TestParseJobCPUsAndMem(t *testing.T) {
+	jobs, _, err := NewClient().ParseQstatJobsJSON(cpuJobsJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]JobDetail{}
+	for _, j := range jobs {
+		byID[j.JobID] = j
+	}
+
+	multi := byID["10.srv"]
+	if multi.NodeCPUs["c1"] != 64 || multi.NodeCPUs["c2"] != 32 || len(multi.NodeCPUs) != 2 {
+		t.Errorf("10.srv NodeCPUs = %v", multi.NodeCPUs)
+	}
+	if multi.Nodes["c1"] != 0 || len(multi.Nodes) != 2 {
+		t.Errorf("10.srv CPU-only job should still list nodes with 0 GPUs: %v", multi.Nodes)
+	}
+	if multi.CPUsRequested != 96 || multi.MemRequested != 375*(1<<30) {
+		t.Errorf("10.srv requested ncpus=%d mem=%v", multi.CPUsRequested, multi.MemRequested)
+	}
+	if gpu := byID["11.srv"]; gpu.NodeCPUs["g1"] != 24 || gpu.Nodes["g1"] != 2 || gpu.MemRequested != 450*(1<<30) {
+		t.Errorf("11.srv NodeCPUs=%v Nodes=%v mem=%v", gpu.NodeCPUs, gpu.Nodes, gpu.MemRequested)
+	}
+	if fb := byID["12.srv"]; fb.NodeCPUs["c3"] != 8 {
+		t.Errorf("12.srv: exec_vnode without ncpus should fall back to Resource_List.ncpus, got %v", fb.NodeCPUs)
+	}
+	if q := byID["13.srv"]; q.CPUsRequested != 16 || q.NodeCPUs != nil || q.MemRequested != 64*(1<<30) {
+		t.Errorf("13.srv queued ncpus=%d NodeCPUs=%v mem=%v", q.CPUsRequested, q.NodeCPUs, q.MemRequested)
+	}
+}
+
+func TestParseMemoryToBytes(t *testing.T) {
+	cases := map[string]float64{
+		"450gb":       450 * (1 << 30),
+		"100GB":       100 * (1 << 30),
+		"471859200kb": 471859200 * 1024,
+		"2tb":         2 * (1 << 40),
+		"512mb":       512 * (1 << 20),
+		"1024":        1024,
+		"1024b":       1024,
+		"1kw":         8 * 1024,
+		"":            0,
+		"--":          0,
+	}
+	for in, want := range cases {
+		if got := parseMemoryToBytes(in); got != want {
+			t.Errorf("parseMemoryToBytes(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+// Vanda-style vnode names (CN-001[0]) and a chunk spread over several vnodes
+// inside one pair of parentheses
+func TestParseExecVnodeVandaStyle(t *testing.T) {
+	ev := "(CN-001[0]:ncpus=32:mem=128gb+CN-001[1]:ncpus=32:mem=128gb)+(CN-002[0]:ncpus=16:ngpus=1)"
+	cpus := parseExecVnodeResource(ev, "ncpus")
+	want := map[string]int{"CN-001[0]": 32, "CN-001[1]": 32, "CN-002[0]": 16}
+	if !reflect.DeepEqual(cpus, want) {
+		t.Errorf("ncpus = %v, want %v", cpus, want)
+	}
+	gpus := parseExecVnodeGPUs(ev)
+	if gpus["CN-002[0]"] != 1 || gpus["CN-001[0]"] != 0 || len(gpus) != 3 {
+		t.Errorf("ngpus = %v", gpus)
 	}
 }

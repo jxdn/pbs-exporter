@@ -28,6 +28,10 @@ type Registry struct {
 	JobWaitReason         *prometheus.GaugeVec
 	QueueWaitReasonJobs   *prometheus.GaugeVec
 	QueueWaitReasonGpus   *prometheus.GaugeVec
+	JobNcpus              *prometheus.GaugeVec
+	JobQueuedNcpus        *prometheus.GaugeVec
+	JobMemBytes           *prometheus.GaugeVec
+	ProjectCpus           *prometheus.GaugeVec
 	JobChargeRate         *prometheus.GaugeVec
 	JobChargeGpuHours     *prometheus.GaugeVec
 	ProjectChargeGpuHours *prometheus.GaugeVec
@@ -245,6 +249,38 @@ func NewRegistry() *Registry {
 				Help: "GPUs requested by jobs not running, per queue, wait reason and detail",
 			},
 			[]string{"queue", "reason", "detail"},
+		),
+
+		JobNcpus: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_job_ncpus",
+				Help: "CPU cores allocated to a running job on that node (from exec_vnode)",
+			},
+			[]string{"job_id", "node"},
+		),
+
+		JobQueuedNcpus: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_job_queued_ncpus",
+				Help: "CPU cores requested by a queued, held or waiting job (Resource_List.ncpus)",
+			},
+			[]string{"job_id"},
+		),
+
+		JobMemBytes: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_job_mem_bytes",
+				Help: "Memory requested by a running, queued, held or waiting job (Resource_List.mem), in bytes",
+			},
+			[]string{"job_id"},
+		),
+
+		ProjectCpus: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_project_cpus",
+				Help: "CPU cores per project and state: allocated for R, requested for Q, H and W",
+			},
+			[]string{"project", "state"},
 		),
 
 		JobChargeRate: prometheus.NewGaugeVec(
@@ -767,6 +803,10 @@ func (r *Registry) registerMetrics() {
 		r.JobWaitReason,
 		r.QueueWaitReasonJobs,
 		r.QueueWaitReasonGpus,
+		r.JobNcpus,
+		r.JobQueuedNcpus,
+		r.JobMemBytes,
+		r.ProjectCpus,
 		r.JobChargeRate,
 		r.JobChargeGpuHours,
 		r.ProjectChargeGpuHours,
@@ -854,6 +894,10 @@ func (r *Registry) ResetJobDetailMetrics() {
 	r.JobWaitReason.Reset()
 	r.QueueWaitReasonJobs.Reset()
 	r.QueueWaitReasonGpus.Reset()
+	r.JobNcpus.Reset()
+	r.JobQueuedNcpus.Reset()
+	r.JobMemBytes.Reset()
+	r.ProjectCpus.Reset()
 	r.JobChargeRate.Reset()
 	r.JobChargeGpuHours.Reset()
 	r.ProjectChargeGpuHours.Reset()

@@ -119,9 +119,12 @@ type JobDetail struct {
 	Project           string
 	Name              string
 	Nodes             map[string]int // node name -> GPUs allocated on that node (running jobs only)
+	NodeCPUs          map[string]int // node name -> CPUs allocated on that node (running jobs only)
 	GPUsRequested     int
-	WalltimeUsed      int // seconds
-	WalltimeRequested int // seconds
+	CPUsRequested     int     // Resource_List.ncpus
+	MemRequested      float64 // Resource_List.mem in bytes, 0 if unset
+	WalltimeUsed      int     // seconds
+	WalltimeRequested int     // seconds
 	QueuedAt          time.Time
 	Comment           string     // scheduler comment, e.g. "Not Running: Insufficient amount of resource: ngpus"
 	HoldTypes         string     // Hold_Types: n (none), u (user), o (operator), s (system), p (password)
@@ -238,6 +241,8 @@ func (c *Client) ParseQstatJobsJSON(output string) ([]JobDetail, string, error) 
 			ResourceList struct {
 				Walltime   string          `json:"walltime"`
 				NGPUs      json.RawMessage `json:"ngpus"`
+				NCPUs      json.RawMessage `json:"ncpus"`
+				Mem        string          `json:"mem"`
 				AmJobCache json.RawMessage `json:"am_job_cache"`
 			} `json:"Resource_List"`
 		} `json:"Jobs"`
@@ -269,6 +274,8 @@ func (c *Client) ParseQstatJobsJSON(output string) ([]JobDetail, string, error) 
 			Project:           project,
 			Name:              j.JobName,
 			GPUsRequested:     int(rawNumber(j.ResourceList.NGPUs)),
+			CPUsRequested:     int(rawNumber(j.ResourceList.NCPUs)),
+			MemRequested:      parseMemoryToBytes(j.ResourceList.Mem),
 			WalltimeUsed:      parseWalltimeToSeconds(j.ResourcesUsed.Walltime),
 			WalltimeRequested: parseWalltimeToSeconds(j.ResourceList.Walltime),
 			QueuedAt:          parsePbsTime(j.Qtime),
@@ -278,6 +285,15 @@ func (c *Client) ParseQstatJobsJSON(output string) ([]JobDetail, string, error) 
 		}
 		if j.JobState == "R" {
 			job.Nodes = parseExecVnodeGPUs(j.ExecVnode)
+			job.NodeCPUs = parseExecVnodeResource(j.ExecVnode, "ncpus")
+			// exec_vnode without ncpus on a single node: fall back to Resource_List.ncpus
+			if len(job.NodeCPUs) == 1 && job.CPUsRequested > 0 {
+				for node, n := range job.NodeCPUs {
+					if n == 0 {
+						job.NodeCPUs[node] = job.CPUsRequested
+					}
+				}
+			}
 		}
 		jobs = append(jobs, job)
 	}
@@ -368,6 +384,13 @@ func parsePbsTime(raw json.RawMessage) time.Time {
 // parseExecVnodeGPUs parses exec_vnode like "(hopper-04:ngpus=1:ncpus=12)+(hopper-05:ncpus=4)"
 // and returns GPUs per node (nodes without ngpus map to 0)
 func parseExecVnodeGPUs(execVnode string) map[string]int {
+	return parseExecVnodeResource(execVnode, "ngpus")
+}
+
+// parseExecVnodeResource sums an integer resource (e.g. ngpus, ncpus) per node
+// from exec_vnode; nodes without that resource map to 0
+func parseExecVnodeResource(execVnode, resource string) map[string]int {
+	prefix := resource + "="
 	nodes := make(map[string]int)
 	for _, chunk := range strings.Split(execVnode, "+") {
 		chunk = strings.Trim(strings.TrimSpace(chunk), "()")
@@ -378,7 +401,7 @@ func parseExecVnodeGPUs(execVnode string) map[string]int {
 		node := parts[0]
 		nodes[node] += 0
 		for _, kv := range parts[1:] {
-			if v, ok := strings.CutPrefix(kv, "ngpus="); ok {
+			if v, ok := strings.CutPrefix(kv, prefix); ok {
 				if n, err := strconv.Atoi(v); err == nil {
 					nodes[node] += n
 				}
@@ -730,6 +753,33 @@ func parseMemoryToGB(memStr string) float64 {
 	}
 
 	return 0
+}
+
+// parseMemoryToBytes converts a PBS size such as "450gb", "471859200kb" or
+// "100GB" to bytes. PBS units are powers of 1024; a bare number is bytes and
+// "w" means words (8 bytes). Returns 0 if empty or unparseable.
+func parseMemoryToBytes(s string) float64 {
+	s = strings.ToLower(strings.TrimSpace(s))
+	units := []struct {
+		suffix string
+		mult   float64
+	}{
+		{"pb", 1 << 50}, {"tb", 1 << 40}, {"gb", 1 << 30}, {"mb", 1 << 20}, {"kb", 1 << 10},
+		{"pw", 8 << 50}, {"tw", 8 << 40}, {"gw", 8 << 30}, {"mw", 8 << 20}, {"kw", 8 << 10},
+		{"b", 1}, {"w", 8},
+	}
+	mult := 1.0
+	for _, u := range units {
+		if strings.HasSuffix(s, u.suffix) {
+			s, mult = strings.TrimSuffix(s, u.suffix), u.mult
+			break
+		}
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil || v < 0 {
+		return 0
+	}
+	return v * mult
 }
 
 // parseFraction parses CPU/GPU fraction like "112/112" -> free=112, total=112
