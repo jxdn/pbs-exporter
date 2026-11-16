@@ -25,6 +25,9 @@ type Registry struct {
 	JobWalltimeRequested *prometheus.GaugeVec
 	JobQueuedInfo        *prometheus.GaugeVec
 	JobQueuedSeconds     *prometheus.GaugeVec
+	JobWaitReason        *prometheus.GaugeVec
+	QueueWaitReasonJobs  *prometheus.GaugeVec
+	QueueWaitReasonGpus  *prometheus.GaugeVec
 	ProjectJobs          *prometheus.GaugeVec
 	ProjectGpus          *prometheus.GaugeVec
 
@@ -204,7 +207,7 @@ func NewRegistry() *Registry {
 		JobQueuedInfo: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "pbs_job_queued_info",
-				Help: "Queued (Q) or held (H) job information (always 1)",
+				Help: "Queued (Q), held (H) or waiting (W) job information (always 1)",
 			},
 			[]string{"job_id", "user", "queue", "project", "job_name", "state"},
 		),
@@ -215,6 +218,30 @@ func NewRegistry() *Registry {
 				Help: "Seconds since a queued or held job entered the queue",
 			},
 			[]string{"job_id"},
+		),
+
+		JobWaitReason: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_job_wait_reason",
+				Help: "Why a queued, held or waiting job is not running (always 1); comment is the raw PBS comment",
+			},
+			[]string{"job_id", "reason", "detail", "comment"},
+		),
+
+		QueueWaitReasonJobs: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_queue_wait_reason_jobs",
+				Help: "Jobs not running per queue, wait reason and detail",
+			},
+			[]string{"queue", "reason", "detail"},
+		),
+
+		QueueWaitReasonGpus: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_queue_wait_reason_gpus",
+				Help: "GPUs requested by jobs not running, per queue, wait reason and detail",
+			},
+			[]string{"queue", "reason", "detail"},
 		),
 
 		ProjectJobs: prometheus.NewGaugeVec(
@@ -710,6 +737,9 @@ func (r *Registry) registerMetrics() {
 		r.JobWalltimeRequested,
 		r.JobQueuedInfo,
 		r.JobQueuedSeconds,
+		r.JobWaitReason,
+		r.QueueWaitReasonJobs,
+		r.QueueWaitReasonGpus,
 		r.ProjectJobs,
 		r.ProjectGpus,
 		r.ExporterCommandSuccess,
@@ -791,6 +821,9 @@ func (r *Registry) ResetJobDetailMetrics() {
 	r.JobWalltimeRequested.Reset()
 	r.JobQueuedInfo.Reset()
 	r.JobQueuedSeconds.Reset()
+	r.JobWaitReason.Reset()
+	r.QueueWaitReasonJobs.Reset()
+	r.QueueWaitReasonGpus.Reset()
 	r.ProjectJobs.Reset()
 	r.ProjectGpus.Reset()
 }

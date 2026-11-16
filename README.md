@@ -61,9 +61,32 @@ Running jobs:
 - `pbs_job_walltime_used_seconds{job_id}`: Walltime used
 - `pbs_job_walltime_requested_seconds{job_id}`: Walltime requested
 
-Queued (Q) and held (H) jobs:
+Queued (Q), held (H) and waiting (W) jobs:
 - `pbs_job_queued_info{job_id,user,queue,project,job_name,state}`: Always 1
 - `pbs_job_queued_seconds{job_id}`: Seconds since the job entered the queue (`qtime`)
+- `pbs_job_wait_reason{job_id,reason,detail,comment}`: Always 1. Why the job isn't running; `comment` is the raw PBS comment
+
+Why jobs wait, per queue:
+- `pbs_queue_wait_reason_jobs{queue,reason,detail}`: Jobs not running
+- `pbs_queue_wait_reason_gpus{queue,reason,detail}`: GPUs those jobs request
+
+`reason` comes from the job's scheduler `comment` and `Hold_Types`:
+
+| reason | detail | PBS says |
+|---|---|---|
+| `user_limit`, `group_limit`, `project_limit` | limit hit, e.g. `queue small running job`, `queue gpu ngpus` | `User has reached queue small running job limit.`, `would exceed user bob's limit on resource ngpus in queue gpu` |
+| `queue_limit`, `server_limit` | e.g. `queue small` | `Queue small job limit has been reached.`, `would exceed overall limit on resource ...` |
+| `insufficient_resource` | resource: `ngpus`, `ncpus`, `mem`, `host`, `gpu_model`, `nodes` | `Insufficient amount of resource: ngpus` (no free resources right now) |
+| `can_never_run` | resource | `Can Never Run: ...` (the request can never be met) |
+| `budget` | hook message | `Budgets-am_hook: Project has already ended.` |
+| `top_job` | | `Job would conflict with reservation or top job`, `Draining system ...` |
+| `held_user`, `held_operator`, `held_system`, `held_bad_password` | `Hold_Types` | state H; the hold type decides which |
+| `held_failed_runs` | | `too many failed attempts to run` |
+| `start_time` | | state W: waiting for its `qsub -a` start time |
+| `array_subjob` | | queued subjob of an array that has started |
+| `not_evaluated` | | no comment yet: the scheduler hasn't looked at the job |
+| `queue_stopped`, `dedicated_time`, `dependency`, `pbs_error` | | other scheduler messages |
+| `other` | the comment, with digits shown as N | anything not listed above |
 
 Per project (`project` is `none` when a job has no project):
 - `pbs_project_jobs{project,state}`: Jobs per project in state R, Q or H
@@ -108,7 +131,7 @@ Example alert: `time() - pbs_exporter_last_success_timestamp_seconds{command="qs
 
 [`grafana/pbs-cluster-dashboard.json`](grafana/pbs-cluster-dashboard.json) is a ready-to-import dashboard. Import it with **Dashboards → New → Import → Upload dashboard JSON file**, then pick your Prometheus data source and a cluster at the top.
 
-It starts with an **executive summary**: GPU allocation and actual GPU use, GPUs held but idle, running and waiting jobs, GPU demand waiting, longest queue wait, nodes by state, active projects and exporter health. Below it are rows for trends, projects, users, queues, idle GPU jobs, longest-waiting jobs, nodes and exporter health.
+It starts with an **executive summary**: GPU allocation and actual GPU use, GPUs held but idle, running and waiting jobs, GPU demand waiting, longest queue wait, nodes by state, active projects, exporter health, and why jobs are waiting (blocked by limits, waiting for free GPUs/CPUs, can never run). Below it are rows for trends, projects, users, queues, idle GPU jobs, waiting jobs (reasons by queue, reasons over time, and the longest-waiting jobs with their PBS comment), nodes and exporter health.
 
 The **Cluster** dropdown lists every scrape job that exports `pbs_node_state`, so each pbs-exporter in the same Prometheus appears automatically. The actual-GPU-use panels match DCGM GPUs to PBS nodes by name, and the idle panels need the rules in `prometheus/` to be loaded.
 

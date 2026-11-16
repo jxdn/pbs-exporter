@@ -123,6 +123,8 @@ type JobDetail struct {
 	WalltimeUsed      int // seconds
 	WalltimeRequested int // seconds
 	QueuedAt          time.Time
+	Comment           string // scheduler comment, e.g. "Not Running: Insufficient amount of resource: ngpus"
+	HoldTypes         string // Hold_Types: n (none), u (user), o (operator), s (system), p (password)
 }
 
 // QueueInfo represents a single queue from qstat -Qf -F json
@@ -205,6 +207,8 @@ func (c *Client) ParseQstatJobsJSON(output string) ([]JobDetail, string, error) 
 			Queue         string          `json:"queue"`
 			Project       string          `json:"project"`
 			ExecVnode     string          `json:"exec_vnode"`
+			Comment       string          `json:"comment"`
+			HoldTypes     string          `json:"Hold_Types"`
 			Qtime         json.RawMessage `json:"qtime"`
 			ResourcesUsed struct {
 				Walltime string `json:"walltime"`
@@ -263,6 +267,8 @@ func (c *Client) ParseQstatJobsJSON(output string) ([]JobDetail, string, error) 
 			WalltimeUsed:      parseWalltimeToSeconds(j.ResourcesUsed.Walltime),
 			WalltimeRequested: parseWalltimeToSeconds(j.ResourceList.Walltime),
 			QueuedAt:          parsePbsTime(j.Qtime),
+			Comment:           j.Comment,
+			HoldTypes:         j.HoldTypes,
 		}
 		if j.JobState == "R" {
 			job.Nodes = parseExecVnodeGPUs(j.ExecVnode)

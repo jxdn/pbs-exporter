@@ -874,6 +874,215 @@
       }
     },
     {
+      "type": "bargauge",
+      "title": "Why jobs are waiting",
+      "id": 40,
+      "description": "Queued, held and waiting jobs by reason, from the PBS job comment and hold type. user_limit = the user hit a per-user queue limit; insufficient_resource = not enough free GPUs/CPUs right now; can_never_run = the request can never be met; held_* = put on hold; not_evaluated = the scheduler has not looked at it yet.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 11
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sort_desc(sum by (reason) (pbs_queue_wait_reason_jobs{job=~\"$job\"}))",
+          "refId": "A",
+          "legendFormat": "{{reason}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "color": {
+            "mode": "continuous-BlYlRd"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true,
+        "valueMode": "color",
+        "namePlacement": "left",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Blocked by limits",
+      "id": 41,
+      "description": "Jobs that could start but a user, group, project, queue or server limit stops them (e.g. max running jobs per user in a queue).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 12,
+        "y": 11
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(pbs_queue_wait_reason_jobs{job=~\"$job\", reason=~\".+_limit\"}) or vector(0)",
+          "refId": "A",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Waiting for free GPUs/CPUs",
+      "id": 42,
+      "description": "Jobs waiting because the cluster has no free resources of the kind they asked for right now.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 16,
+        "y": 11
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(pbs_queue_wait_reason_jobs{job=~\"$job\", reason=\"insufficient_resource\"}) or vector(0)",
+          "refId": "A",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Can never run",
+      "id": 43,
+      "description": "Jobs whose request can never be met (wrong host, GPU model, or more than any node has). They need to be fixed or deleted.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 20,
+        "y": 11
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(pbs_queue_wait_reason_jobs{job=~\"$job\", reason=\"can_never_run\"}) or vector(0)",
+          "refId": "A",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "red"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
       "type": "row",
       "title": "Trends",
       "id": 14,
@@ -882,7 +1091,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 11
+        "y": 18
       },
       "panels": []
     },
@@ -899,7 +1108,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 12
+        "y": 19
       },
       "targets": [
         {
@@ -976,7 +1185,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 12
+        "y": 19
       },
       "targets": [
         {
@@ -1035,7 +1244,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 20
+        "y": 27
       },
       "targets": [
         {
@@ -1103,7 +1312,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 20
+        "y": 27
       },
       "targets": [
         {
@@ -1149,7 +1358,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 28
+        "y": 35
       },
       "panels": []
     },
@@ -1166,7 +1375,7 @@
         "h": 10,
         "w": 14,
         "x": 0,
-        "y": 29
+        "y": 36
       },
       "targets": [
         {
@@ -1296,7 +1505,7 @@
         "h": 10,
         "w": 10,
         "x": 14,
-        "y": 29
+        "y": 36
       },
       "targets": [
         {
@@ -1345,7 +1554,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 39
+        "y": 46
       },
       "panels": []
     },
@@ -1362,7 +1571,7 @@
         "h": 9,
         "w": 8,
         "x": 0,
-        "y": 40
+        "y": 47
       },
       "targets": [
         {
@@ -1415,7 +1624,7 @@
         "h": 9,
         "w": 8,
         "x": 8,
-        "y": 40
+        "y": 47
       },
       "targets": [
         {
@@ -1468,7 +1677,7 @@
         "h": 9,
         "w": 8,
         "x": 16,
-        "y": 40
+        "y": 47
       },
       "targets": [
         {
@@ -1517,7 +1726,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 49
+        "y": 56
       },
       "panels": []
     },
@@ -1534,7 +1743,7 @@
         "h": 10,
         "w": 14,
         "x": 0,
-        "y": 50
+        "y": 57
       },
       "targets": [
         {
@@ -1770,7 +1979,7 @@
         "h": 10,
         "w": 10,
         "x": 14,
-        "y": 50
+        "y": 57
       },
       "targets": [
         {
@@ -1820,7 +2029,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 60
+        "y": 67
       },
       "panels": []
     },
@@ -1837,7 +2046,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 61
+        "y": 68
       },
       "targets": [
         {
@@ -1922,7 +2131,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 61
+        "y": 68
       },
       "targets": [
         {
@@ -2003,7 +2212,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 70
+        "y": 77
       },
       "targets": [
         {
@@ -2053,24 +2262,24 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 78
+        "y": 85
       },
       "panels": []
     },
     {
       "type": "table",
-      "title": "Longest-waiting jobs",
-      "id": 34,
-      "description": "",
+      "title": "Waiting reasons by queue",
+      "id": 44,
+      "description": "Jobs not running per queue, reason and detail (queue limit, resource or hold type), with the GPUs they ask for.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "gridPos": {
         "h": 10,
-        "w": 24,
+        "w": 14,
         "x": 0,
-        "y": 79
+        "y": 86
       },
       "targets": [
         {
@@ -2078,7 +2287,165 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "topk(25, pbs_job_queued_seconds{job=~\"$job\"} * on (job_id) group_left (user, project, queue, job_name, state) pbs_job_queued_info{job=~\"$job\"})",
+          "expr": "sum by (queue, reason, detail) (pbs_queue_wait_reason_jobs{job=~\"$job\"})",
+          "refId": "A",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (queue, reason, detail) (pbs_queue_wait_reason_gpus{job=~\"$job\"})",
+          "refId": "B",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "Jobs",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": null,
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true
+            },
+            "renameByName": {
+              "queue": "Queue",
+              "reason": "Reason",
+              "detail": "Detail",
+              "Value #A": "Jobs",
+              "Value #B": "GPUs requested"
+            },
+            "indexByName": {
+              "queue": 0,
+              "reason": 1,
+              "detail": 2,
+              "Value #A": 3,
+              "Value #B": 4
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Waiting jobs by reason",
+      "id": 45,
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 10,
+        "x": 14,
+        "y": 86
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (reason) (pbs_queue_wait_reason_jobs{job=~\"$job\"})",
+          "refId": "A",
+          "legendFormat": "{{reason}}",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "table",
+      "title": "Longest-waiting jobs",
+      "id": 34,
+      "description": "The 25 jobs waiting longest, with why. Comment is the raw PBS scheduler comment.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 96
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "topk(25, pbs_job_queued_seconds{job=~\"$job\"} * on (job_id) group_left (user, project, queue, job_name, state) pbs_job_queued_info{job=~\"$job\"} * on (job_id) group_left (reason, detail, comment) pbs_job_wait_reason{job=~\"$job\"})",
           "refId": "A",
           "legendFormat": "__auto",
           "instant": true,
@@ -2174,7 +2541,10 @@
               "user": "User",
               "project": "Project",
               "queue": "Queue",
-              "state": "State"
+              "state": "State",
+              "reason": "Reason",
+              "detail": "Detail",
+              "comment": "PBS comment"
             },
             "indexByName": {
               "user": 0,
@@ -2183,7 +2553,10 @@
               "job_id": 3,
               "queue": 4,
               "state": 5,
-              "Value": 6
+              "Value": 6,
+              "reason": 7,
+              "detail": 8,
+              "comment": 9
             }
           }
         }
@@ -2198,7 +2571,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 89
+        "y": 108
       },
       "panels": []
     },
@@ -2215,7 +2588,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 90
+        "y": 109
       },
       "targets": [
         {
@@ -2469,7 +2842,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 102
+        "y": 121
       },
       "panels": []
     },
@@ -2486,7 +2859,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 103
+        "y": 122
       },
       "targets": [
         {
@@ -2673,7 +3046,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 103
+        "y": 122
       },
       "targets": [
         {
@@ -2710,5 +3083,6 @@
         }
       }
     }
-  ]
+  ],
+  "version": 2
 }

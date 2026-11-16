@@ -1,6 +1,7 @@
 package server
 
 import (
+	"strings"
 	"time"
 
 	"pbs-exporter/internal/metrics"
@@ -77,11 +78,15 @@ func (s *Server) updateJobMetrics() {
 			}
 			s.registry.JobWalltimeUsed.WithLabelValues(job.JobID).Set(float64(job.WalltimeUsed))
 			s.registry.JobWalltimeRequested.WithLabelValues(job.JobID).Set(float64(job.WalltimeRequested))
-		case "Q", "H":
+		case "Q", "H", "W":
 			s.registry.JobQueuedInfo.WithLabelValues(job.JobID, job.User, job.Queue, job.Project, job.Name, job.State).Set(1)
 			if !job.QueuedAt.IsZero() {
 				s.registry.JobQueuedSeconds.WithLabelValues(job.JobID).Set(now.Sub(job.QueuedAt).Seconds())
 			}
+			reason, detail := pbs.WaitReason(job.State, job.Comment, job.HoldTypes)
+			s.registry.JobWaitReason.WithLabelValues(job.JobID, reason, detail, truncate(job.Comment, 200)).Set(1)
+			s.registry.QueueWaitReasonJobs.WithLabelValues(job.Queue, reason, detail).Inc()
+			s.registry.QueueWaitReasonGpus.WithLabelValues(job.Queue, reason, detail).Add(float64(job.GPUsRequested))
 			s.registry.ProjectGpus.WithLabelValues(job.Project, job.State).Add(float64(job.GPUsRequested))
 		default:
 			continue
@@ -136,6 +141,16 @@ func (s *Server) updateQueueMetrics() {
 
 	s.registry.QueueSummaryRunning.Set(float64(totalRunning))
 	s.registry.QueueSummaryQueued.Set(float64(totalQueued))
+}
+
+// truncate cuts s to at most n characters and drops invalid UTF-8
+// (Prometheus label values must be valid UTF-8)
+func truncate(s string, n int) string {
+	r := []rune(strings.ToValidUTF8(s, ""))
+	if len(r) > n {
+		r = r[:n]
+	}
+	return string(r)
 }
 
 func boolToFloat(b bool) float64 {
