@@ -57,6 +57,11 @@ func (c *Client) GetPbsnodesOutput() (string, error) {
 	return c.run("pbsnodes", "-aSj")
 }
 
+// GetPbsnodesJSON executes pbsnodes -a -F json and returns the output
+func (c *Client) GetPbsnodesJSON() (string, error) {
+	return c.run("pbsnodes", "-a", "-F", "json")
+}
+
 // GetQstatQueuesJSON executes qstat -Qf -F json and returns the output
 func (c *Client) GetQstatQueuesJSON() (string, error) {
 	return c.run("qstat", "-Qf", "-F", "json")
@@ -263,6 +268,12 @@ func (c *Client) ParseQstatJobsJSON(output string) ([]JobDetail, string, error) 
 	for jobID, j := range parsed.Jobs {
 		user, _, _ := strings.Cut(j.JobOwner, "@")
 		project := j.Project
+		// PBS leaves `project` off queued array subjobs; it is only on the parent "123[]"
+		if project == "" {
+			if parent, ok := parsed.Jobs[parentArrayID(jobID)]; ok {
+				project = parent.Project
+			}
+		}
 		if project == "" {
 			project = "none"
 		}
@@ -298,6 +309,17 @@ func (c *Client) ParseQstatJobsJSON(output string) ([]JobDetail, string, error) 
 		jobs = append(jobs, job)
 	}
 	return jobs, version, nil
+}
+
+// parentArrayID returns the parent array's ID for a subjob ("123[4].srv" ->
+// "123[].srv"), or "" if jobID is not a subjob
+func parentArrayID(jobID string) string {
+	open := strings.Index(jobID, "[")
+	end := strings.Index(jobID, "]")
+	if open < 0 || end <= open+1 {
+		return ""
+	}
+	return jobID[:open+1] + jobID[end:]
 }
 
 // sanitizeAmJobCache replaces am_job_cache values that are not valid JSON with
@@ -409,6 +431,37 @@ func parseExecVnodeResource(execVnode, resource string) map[string]int {
 		}
 	}
 	return nodes
+}
+
+// NodeDetail is per-node information only in `pbsnodes -a -F json`
+type NodeDetail struct {
+	State           string    // full state, e.g. "offline", "down,offline", "job-busy"
+	Comment         string    // admin or PBS comment (pbsnodes -C), "" if none
+	LastStateChange time.Time // last_state_change_time, zero if absent
+}
+
+// ParsePbsnodesJSON parses `pbsnodes -a -F json` into nodes by name
+func (c *Client) ParsePbsnodesJSON(output string) (map[string]NodeDetail, error) {
+	var parsed struct {
+		Nodes map[string]struct {
+			State           string          `json:"state"`
+			Comment         string          `json:"comment"`
+			LastStateChange json.RawMessage `json:"last_state_change_time"`
+		} `json:"nodes"`
+	}
+	if err := json.Unmarshal([]byte(output), &parsed); err != nil {
+		log.Printf("Error parsing pbsnodes JSON output: %v", err)
+		return nil, err
+	}
+	nodes := make(map[string]NodeDetail, len(parsed.Nodes))
+	for name, n := range parsed.Nodes {
+		nodes[name] = NodeDetail{
+			State:           n.State,
+			Comment:         strings.TrimSpace(n.Comment),
+			LastStateChange: parsePbsTime(n.LastStateChange),
+		}
+	}
+	return nodes, nil
 }
 
 // ParseQstatQueuesJSON parses `qstat -Qf -F json` output into queues by name.

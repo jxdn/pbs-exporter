@@ -120,6 +120,10 @@ Join per-job values with `pbs_job_info` (running) or `pbs_job_queued_info` (wait
 - `pbs_node_memory_used_gb`: Used memory on node in GB
 - `pbs_node_memory_total_gb`: Total memory on node in GB
 
+Node comments (from `pbsnodes -a -F json`):
+- `pbs_node_comment{node,state,comment}`: Always 1, only for nodes with a comment (set by admins with `pbsnodes -C`, or by PBS, e.g. `node down: communication closed`). `state` is the full PBS state, e.g. `down,offline`
+- `pbs_node_last_state_change_timestamp_seconds{node}`: Unix time the node last changed state. `time() - pbs_node_last_state_change_timestamp_seconds` gives how long it has been in its current state
+
 ### Queue Metrics (from `qstat -Qf -F json`, every queue PBS reports)
 - `pbs_queue_info{queue,type}`: Always 1; `type` is `Execution` or `Route`
 - `pbs_queue_jobs{queue,state}`: Jobs per queue and state (`Queued`, `Held`, `Waiting`, `Running`, `Exiting`, `Begun`, `Transit`)
@@ -129,7 +133,7 @@ Join per-job values with `pbs_job_info` (running) or `pbs_job_queued_info` (wait
 - `qstatq_total_running`, `qstatq_total_queued`: Totals over all queues
 
 ### Exporter Health Metrics
-Per PBS command (`command` = `qstat_json`, `pbsnodes`, `qstat_queues`, `qstat_bf`):
+Per PBS command (`command` = `qstat_json`, `pbsnodes`, `pbsnodes_json`, `qstat_queues`, `qstat_bf`):
 - `pbs_exporter_command_success{command}`: 1 if the last run succeeded, 0 if it failed or timed out
 - `pbs_exporter_command_duration_seconds{command}`: How long the last run took
 - `pbs_exporter_last_success_timestamp_seconds{command}`: Unix time of the last successful run
@@ -180,7 +184,7 @@ Only nodes that report `gpu_process_count` are checked. PBS records which node a
 | `-interval` | `60s` | How often to query PBS |
 | `-command-timeout` | `45s` | Time limit for each PBS command; a stuck command is killed and retried next cycle |
 
-Each cycle runs 4 PBS commands: `qstat -f -F json -t`, `pbsnodes -aSj`, `qstat -Qf -F json` and `qstat -Bf`. Metrics are only replaced after a command succeeds, so a failing or slow PBS server leaves the last good values in place instead of empty metrics. Watch `pbs_exporter_command_success` to catch that.
+Each cycle runs 5 PBS commands: `qstat -f -F json -t`, `pbsnodes -aSj`, `pbsnodes -a -F json`, `qstat -Qf -F json` and `qstat -Bf`. Metrics are only replaced after a command succeeds, so a failing or slow PBS server leaves the last good values in place instead of empty metrics. Watch `pbs_exporter_command_success` to catch that.
 
 ## Dependencies
 

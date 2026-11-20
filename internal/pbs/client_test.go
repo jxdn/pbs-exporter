@@ -430,3 +430,61 @@ func TestParseExecVnodeVandaStyle(t *testing.T) {
 		t.Errorf("ngpus = %v", gpus)
 	}
 }
+
+func TestSubjobInheritsParentProject(t *testing.T) {
+	const out = `{"Jobs":{
+		"1550616[].srv":{"Job_Owner":"u1@h","job_state":"B","queue":"batch_cpu","project":"CFP03-CF-027"},
+		"1550616[249].srv":{"Job_Owner":"u1@h","job_state":"Q","queue":"batch_cpu","Resource_List":{"ncpus":16}},
+		"1550616[250].srv":{"Job_Owner":"u1@h","job_state":"R","queue":"batch_cpu","project":"own","exec_vnode":"(CN-001[0]:ncpus=16)"},
+		"77[3].srv":{"Job_Owner":"u2@h","job_state":"Q","queue":"q"},
+		"88.srv":{"Job_Owner":"u3@h","job_state":"Q","queue":"q"}
+	}}`
+	jobs, _, err := NewClient().ParseQstatJobsJSON(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, j := range jobs {
+		got[j.JobID] = j.Project
+	}
+	want := map[string]string{
+		"1550616[].srv":    "CFP03-CF-027",
+		"1550616[249].srv": "CFP03-CF-027", // queued subjob without project: from parent
+		"1550616[250].srv": "own",          // subjob's own project wins
+		"77[3].srv":        "none",         // parent not in output
+		"88.srv":           "none",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("projects = %v, want %v", got, want)
+	}
+	for in, want := range map[string]string{"123[4].srv": "123[].srv", "123[].srv": "", "123.srv": "", "x": ""} {
+		if got := parentArrayID(in); got != want {
+			t.Errorf("parentArrayID(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestParsePbsnodesJSON(t *testing.T) {
+	const out = `{"pbs_version":"2026.0.0","nodes":{
+		"gn-a40-074":{"state":"job-busy","comment":"failing job starts, checking","last_state_change_time":1795117200},
+		"cn-018":{"state":"down,offline","comment":"node down: communication closed","last_state_change_time":"Fri Nov 20 09:00:00 2026"},
+		"cn-001":{"state":"free","comment":" "},
+		"cn-002":{"state":"free"}
+	}}`
+	nodes, err := NewClient().ParsePbsnodesJSON(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := nodes["gn-a40-074"]; n.State != "job-busy" || n.Comment != "failing job starts, checking" || n.LastStateChange.Unix() != 1795117200 {
+		t.Errorf("gn-a40-074 = %+v", n)
+	}
+	if n := nodes["cn-018"]; n.State != "down,offline" || n.Comment != "node down: communication closed" || n.LastStateChange.IsZero() {
+		t.Errorf("cn-018 = %+v", n)
+	}
+	if nodes["cn-001"].Comment != "" || nodes["cn-002"].Comment != "" || len(nodes) != 4 {
+		t.Errorf("blank comments should be empty: %+v", nodes)
+	}
+	if _, err := NewClient().ParsePbsnodesJSON("not json"); err == nil {
+		t.Error("expected error for invalid JSON")
+	}
+}

@@ -26,6 +26,7 @@ func New(registry *metrics.Registry, pbsClient *pbs.Client) *Server {
 func (s *Server) UpdateMetrics() {
 	s.updateJobMetrics()
 	s.updateNodeMetrics()
+	s.updateNodeDetailMetrics()
 	s.updateQueueMetrics()
 	s.updateServerMetrics()
 }
@@ -253,6 +254,31 @@ func (s *Server) updateJobMetricsFromData(data *pbs.JobData) {
 	s.registry.TotalEJobs.Set(float64(data.TotalE))
 	s.registry.TotalBJobs.Set(float64(data.TotalB))
 	s.registry.TotalAllJobs.Set(float64(data.TotalAll))
+}
+
+// updateNodeDetailMetrics exports node comments and state-change times from
+// pbsnodes -a -F json; kept apart from updateNodeMetrics so a failure here
+// leaves the node usage metrics untouched
+func (s *Server) updateNodeDetailMetrics() {
+	output, err := s.timed("pbsnodes_json", s.pbsClient.GetPbsnodesJSON)
+	var nodes map[string]pbs.NodeDetail
+	if err == nil {
+		nodes, err = s.pbsClient.ParsePbsnodesJSON(output)
+	}
+	if !s.record("pbsnodes_json", err) {
+		return
+	}
+
+	s.registry.NodeComment.Reset()
+	s.registry.NodeLastStateChange.Reset()
+	for name, n := range nodes {
+		if n.Comment != "" {
+			s.registry.NodeComment.WithLabelValues(name, n.State, truncate(n.Comment, 200)).Set(1)
+		}
+		if !n.LastStateChange.IsZero() {
+			s.registry.NodeLastStateChange.WithLabelValues(name).Set(float64(n.LastStateChange.Unix()))
+		}
+	}
 }
 
 func (s *Server) updateNodeMetricsFromData(data *pbs.NodeData) {

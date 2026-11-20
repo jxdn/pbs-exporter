@@ -43,6 +43,8 @@ type Registry struct {
 	ExporterLastSuccess     *prometheus.GaugeVec
 
 	NodeState           *prometheus.GaugeVec
+	NodeComment         *prometheus.GaugeVec
+	NodeLastStateChange *prometheus.GaugeVec
 	NodeJobs            *prometheus.GaugeVec
 	NodeCpusAvailable   *prometheus.GaugeVec
 	NodeCpusUsed        *prometheus.GaugeVec
@@ -369,6 +371,22 @@ func NewRegistry() *Registry {
 				Help: "Walltime requested by a running job in seconds",
 			},
 			[]string{"job_id"},
+		),
+
+		NodeComment: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_node_comment",
+				Help: "Node comment from pbsnodes (always 1; only nodes that have a comment); state is the full PBS state",
+			},
+			[]string{"node", "state", "comment"},
+		),
+
+		NodeLastStateChange: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_node_last_state_change_timestamp_seconds",
+				Help: "Unix time the node last changed state (pbsnodes last_state_change_time)",
+			},
+			[]string{"node"},
 		),
 
 		NodeState: prometheus.NewGaugeVec(
@@ -816,6 +834,8 @@ func (r *Registry) registerMetrics() {
 		r.ExporterCommandDuration,
 		r.ExporterLastSuccess,
 		r.NodeState,
+		r.NodeComment,
+		r.NodeLastStateChange,
 		r.NodeJobs,
 		r.NodeCpusAvailable,
 		r.NodeCpusUsed,
