@@ -252,11 +252,20 @@ func (c *Client) ParseQstatJobsJSON(output string) ([]JobDetail, string, error) 
 			} `json:"Resource_List"`
 		} `json:"Jobs"`
 	}
-	output = sanitizeAmJobCache(output)
-
 	if err := json.Unmarshal([]byte(output), &parsed); err != nil {
-		log.Printf("Error parsing qstat JSON output: %v", err)
-		return nil, "", err
+		// PBS sometimes writes values that are not valid JSON. Repair those
+		// lines and try once more; valid output is never rewritten.
+		fixed := sanitizeQstatJSON(output)
+		if fixed == output {
+			log.Printf("Error parsing qstat JSON output: %v", err)
+			return nil, "", err
+		}
+		parsed.PbsVersion, parsed.Jobs = "", nil
+		if err := json.Unmarshal([]byte(fixed), &parsed); err != nil {
+			log.Printf("Error parsing qstat JSON output (after repair): %v", err)
+			return nil, "", err
+		}
+		log.Printf("qstat JSON output had invalid values; repaired and parsed (first error was: %v)", err)
 	}
 
 	version := versionRe.FindString(parsed.PbsVersion)
@@ -322,33 +331,74 @@ func parentArrayID(jobID string) string {
 	return jobID[:open+1] + jobID[end:]
 }
 
-// sanitizeAmJobCache replaces am_job_cache values that are not valid JSON with
-// null. Some PBS versions write this field with broken quoting (for example
-// `""{}\"`), which would otherwise make the whole qstat output unparseable.
-// Valid values are kept so the budget fields can be read.
-func sanitizeAmJobCache(output string) string {
-	const key = `"am_job_cache":`
-	if !strings.Contains(output, key) {
-		return output
-	}
+// sanitizeQstatJSON repairs single-line `"key":value` entries whose value is not
+// valid JSON, so one bad job cannot make the whole qstat output unparseable.
+// PBS writes JSON by hand and gets some values wrong, for example:
+//   - am_job_cache with broken quoting (`""{}\"`): replaced with null, so the
+//     budget for that job is simply unknown;
+//   - environment variables in Variable_List that look numeric but are not
+//     valid JSON numbers (`"SEGMENT":000`, `"X":007`, `"Y":1e`): written as a
+//     string holding the raw text.
+//
+// Lines that open or close an object or array are left alone, and valid
+// values are never changed.
+func sanitizeQstatJSON(output string) string {
 	lines := strings.Split(output, "\n")
+	changed := false
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, key) {
+		key, value, comma, ok := splitJSONLine(trimmed)
+		if !ok || json.Valid([]byte(value)) {
 			continue
 		}
-		comma := strings.HasSuffix(trimmed, ",")
-		value := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(trimmed, key), ","))
-		if json.Valid([]byte(value)) {
-			continue
+		fixed := "null"
+		if key != `"am_job_cache"` {
+			quoted, err := json.Marshal(value)
+			if err != nil {
+				continue
+			}
+			fixed = string(quoted)
 		}
 		indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-		lines[i] = indent + key + "null"
+		lines[i] = indent + key + ":" + fixed
 		if comma {
 			lines[i] += ","
 		}
+		changed = true
+	}
+	if !changed {
+		return output
 	}
 	return strings.Join(lines, "\n")
+}
+
+// splitJSONLine splits a trimmed `"key":value[,]` line. It reports ok=false for
+// lines that are not a key with a scalar value on the same line, such as
+// `"Resource_List":{`, `}` or `],`.
+func splitJSONLine(trimmed string) (key, value string, comma, ok bool) {
+	if len(trimmed) < 4 || trimmed[0] != '"' {
+		return "", "", false, false
+	}
+	end := strings.IndexByte(trimmed[1:], '"')
+	if end < 0 {
+		return "", "", false, false
+	}
+	end++ // index of the closing quote of the key
+	if end+1 >= len(trimmed) || trimmed[end+1] != ':' {
+		return "", "", false, false
+	}
+	key = trimmed[:end+1]
+	rest := strings.TrimSpace(trimmed[end+2:])
+	comma = strings.HasSuffix(rest, ",")
+	value = strings.TrimSpace(strings.TrimSuffix(rest, ","))
+	if value == "" || value[0] == '{' || value[0] == '[' {
+		return "", "", false, false
+	}
+	// Several pairs on one line (`"a":1, "b":2`): not PBS's layout, leave it.
+	if key != `"am_job_cache"` && strings.Contains(value, `":`) {
+		return "", "", false, false
+	}
+	return key, value, comma, true
 }
 
 // parseAmJobCache reads am_job_cache, a JSON object stored as a JSON string.

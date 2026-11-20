@@ -340,6 +340,85 @@ func TestParseAmJobCache(t *testing.T) {
 	}
 }
 
+// badValuesJSON mimics real Vanda qstat output: an environment variable that
+// PBS wrote as a bare number with leading zeros (job 1598664), and raw
+// non-UTF-8 bytes in Submit_arguments (job 1585676).
+const badValuesJSON = "{\n" +
+	"    \"pbs_version\":\"2022.1.3\",\n" +
+	"    \"Jobs\":{\n" +
+	"        \"1598664.srv\":{\n" +
+	"            \"Job_Owner\":\"alice@login\",\n" +
+	"            \"job_state\":\"R\",\n" +
+	"            \"queue\":\"auto_free\",\n" +
+	"            \"Resource_List\":{\n" +
+	"                \"ncpus\":8,\n" +
+	"                \"walltime\":\"01:00:00\"\n" +
+	"            },\n" +
+	"            \"Variable_List\":{\n" +
+	"                \"L01_E100_SEGMENT\":000,\n" +
+	"                \"AGENT\":007,\n" +
+	"                \"RATIO\":1e,\n" +
+	"                \"COUNT\":42,\n" +
+	"                \"PBS_O_QUEUE\":\"auto_free\"\n" +
+	"            }\n" +
+	"        },\n" +
+	"        \"1585676.srv\":{\n" +
+	"            \"Job_Owner\":\"bob@login\",\n" +
+	"            \"job_state\":\"Q\",\n" +
+	"            \"queue\":\"gpu\",\n" +
+	"            \"Submit_arguments\":\"-I -P ^%^\xee^\xde^) -l select=1:ngpus=1\",\n" +
+	"            \"Resource_List\":{\n" +
+	"                \"am_job_cache\":\"\"{}\\\"\",\n" +
+	"                \"ngpus\":1\n" +
+	"            }\n" +
+	"        }\n" +
+	"    }\n" +
+	"}"
+
+func TestParseQstatJobsJSONBadValues(t *testing.T) {
+	jobs, version, err := NewClient().ParseQstatJobsJSON(badValuesJSON)
+	if err != nil {
+		t.Fatalf("one job with bad values should not fail parsing: %v", err)
+	}
+	if version != "2022.1.3" {
+		t.Errorf("version = %q", version)
+	}
+	byID := map[string]JobDetail{}
+	for _, j := range jobs {
+		byID[j.JobID] = j
+	}
+	if len(byID) != 2 {
+		t.Fatalf("got %d jobs, want 2", len(byID))
+	}
+	if byID["1598664.srv"].State != "R" {
+		t.Errorf("1598664.srv state = %q, want R", byID["1598664.srv"].State)
+	}
+	if byID["1585676.srv"].GPUsRequested != 1 || byID["1585676.srv"].Budget != nil {
+		t.Errorf("1585676.srv = %+v", byID["1585676.srv"])
+	}
+}
+
+func TestSanitizeQstatJSON(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{`    "L01_E100_SEGMENT":000,`, `    "L01_E100_SEGMENT":"000",`},
+		{`"AGENT":007`, `"AGENT":"007"`},
+		{`"am_job_cache":""{}\"",`, `"am_job_cache":null,`},
+		// valid values and structural lines are left alone
+		{`"COUNT":42,`, `"COUNT":42,`},
+		{`"ratio":0.5`, `"ratio":0.5`},
+		{`"comment":"a, b, c",`, `"comment":"a, b, c",`},
+		{`"Resource_List":{`, `"Resource_List":{`},
+		{`"list":[`, `"list":[`},
+		{`},`, `},`},
+		{`"a":"x", "b":"y",`, `"a":"x", "b":"y",`},
+	}
+	for _, c := range cases {
+		if got := sanitizeQstatJSON(c.in); got != c.want {
+			t.Errorf("sanitizeQstatJSON(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 const cpuJobsJSON = `{
     "pbs_version":"2026.0.0",
     "Jobs":{
