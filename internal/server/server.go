@@ -94,6 +94,7 @@ func (s *Server) updateJobMetrics() {
 			s.registry.QueueWaitReasonGpus.WithLabelValues(job.Queue, reason, detail).Add(float64(job.GPUsRequested))
 			s.registry.ProjectGpus.WithLabelValues(job.Project, job.State).Add(float64(job.GPUsRequested))
 			s.registry.JobQueuedNcpus.WithLabelValues(job.JobID).Set(float64(job.CPUsRequested))
+			s.registry.JobQueuedNgpus.WithLabelValues(job.JobID).Set(float64(job.GPUsRequested))
 			s.registry.ProjectCpus.WithLabelValues(job.Project, job.State).Add(float64(job.CPUsRequested))
 		default:
 			continue

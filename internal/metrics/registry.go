@@ -30,6 +30,7 @@ type Registry struct {
 	QueueWaitReasonGpus   *prometheus.GaugeVec
 	JobNcpus              *prometheus.GaugeVec
 	JobQueuedNcpus        *prometheus.GaugeVec
+	JobQueuedNgpus        *prometheus.GaugeVec
 	JobMemBytes           *prometheus.GaugeVec
 	ProjectCpus           *prometheus.GaugeVec
 	JobChargeRate         *prometheus.GaugeVec
@@ -265,6 +266,14 @@ func NewRegistry() *Registry {
 			prometheus.GaugeOpts{
 				Name: "pbs_job_queued_ncpus",
 				Help: "CPU cores requested by a queued, held or waiting job (Resource_List.ncpus)",
+			},
+			[]string{"job_id"},
+		),
+
+		JobQueuedNgpus: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "pbs_job_queued_ngpus",
+				Help: "GPUs requested by a queued, held or waiting job (Resource_List.ngpus)",
 			},
 			[]string{"job_id"},
 		),
@@ -823,6 +832,7 @@ func (r *Registry) registerMetrics() {
 		r.QueueWaitReasonGpus,
 		r.JobNcpus,
 		r.JobQueuedNcpus,
+		r.JobQueuedNgpus,
 		r.JobMemBytes,
 		r.ProjectCpus,
 		r.JobChargeRate,
@@ -916,6 +926,7 @@ func (r *Registry) ResetJobDetailMetrics() {
 	r.QueueWaitReasonGpus.Reset()
 	r.JobNcpus.Reset()
 	r.JobQueuedNcpus.Reset()
+	r.JobQueuedNgpus.Reset()
 	r.JobMemBytes.Reset()
 	r.ProjectCpus.Reset()
 	r.JobChargeRate.Reset()

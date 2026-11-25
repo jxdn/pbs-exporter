@@ -66,6 +66,7 @@ Queued (Q), held (H) and waiting (W) jobs:
 - `pbs_job_queued_info{job_id,user,queue,project,job_name,state}`: Always 1
 - `pbs_job_queued_seconds{job_id}`: Seconds since the job entered the queue (`qtime`)
 - `pbs_job_queued_ncpus{job_id}`: CPU cores requested (`Resource_List.ncpus`)
+- `pbs_job_queued_ngpus{job_id}`: GPUs requested (`Resource_List.ngpus`); 0 for CPU-only jobs
 - `pbs_job_wait_reason{job_id,reason,detail,comment}`: Always 1. Why the job isn't running; `comment` is the raw PBS comment
 
 Budget charge, from `Resource_List.am_job_cache` (written by the PBS Budgets hook; only for jobs that have it):
